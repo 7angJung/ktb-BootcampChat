@@ -4,6 +4,7 @@ import com.ktb.chatapp.dto.FileResponse;
 import com.ktb.chatapp.dto.MessageResponse;
 import com.ktb.chatapp.dto.UserResponse;
 import com.ktb.chatapp.model.Message;
+import com.ktb.chatapp.model.File;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.FileRepository;
 import com.ktb.chatapp.service.FileUrl;
@@ -33,6 +34,16 @@ public class MessageResponseMapper {
      * @return MessageResponse DTO
      */
     public MessageResponse mapToMessageResponse(Message message, User sender) {
+        File file = Optional.ofNullable(message.getFileId())
+                .flatMap(fileRepository::findById)
+                .orElse(null);
+        return mapToMessageResponse(message, sender, file);
+    }
+
+    /**
+     * Batch 조회된 연관 엔티티로 메시지를 변환한다.
+     */
+    public MessageResponse mapToMessageResponse(Message message, User sender, File file) {
         MessageResponse.MessageResponseBuilder builder = MessageResponse.builder()
                 .id(message.getId())
                 .content(message.getContent())
@@ -55,14 +66,13 @@ public class MessageResponseMapper {
         }
 
         // 파일 정보 설정
-        Optional.ofNullable(message.getFileId())
-                .flatMap(fileRepository::findById)
-                .map(file -> FileResponse.builder()
-                        .id(file.getId())
-                        .filename(file.getFilename())
-                        .originalname(file.getOriginalname())
-                        .mimetype(file.getMimetype())
-                        .size(file.getSize())
+        Optional.ofNullable(file)
+                .map(storedFile -> FileResponse.builder()
+                        .id(storedFile.getId())
+                        .filename(storedFile.getFilename())
+                        .originalname(storedFile.getOriginalname())
+                        .mimetype(storedFile.getMimetype())
+                        .size(storedFile.getSize())
                         .build())
                 .ifPresent(builder::file);
 
