@@ -18,6 +18,7 @@ vi.mock('@/contexts/AuthContext', () => ({
 vi.mock('@/lib/socket/socketClient', () => ({
   default: {
     tryLeaveRoom: vi.fn(),
+    clearReadQueues: vi.fn(),
   },
 }));
 

@@ -6,5 +6,6 @@ import java.util.List;
 
 @Data
 public class MarkAsReadRequest {
+    private String roomId;
     private List<String> messageIds;
 }

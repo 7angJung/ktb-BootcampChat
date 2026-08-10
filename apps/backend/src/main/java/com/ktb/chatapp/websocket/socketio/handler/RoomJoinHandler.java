@@ -44,6 +44,15 @@ public class RoomJoinHandler {
     private final RoomLeaveHandler roomLeaveHandler;
     
     @OnEvent(JOIN_ROOM)
+    public void handleJoinRoom(SocketIOClient client, Object payload) {
+        String roomId = extractRoomId(payload);
+        if (roomId == null || roomId.isBlank()) {
+            client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방 정보가 올바르지 않습니다."));
+            return;
+        }
+        handleJoinRoom(client, roomId);
+    }
+
     public void handleJoinRoom(SocketIOClient client, String roomId) {
         try {
             String userId = getUserId(client);
@@ -138,6 +147,17 @@ public class RoomJoinHandler {
                 "message", e.getMessage() != null ? e.getMessage() : "채팅방 입장에 실패했습니다."
             ));
         }
+    }
+
+    private String extractRoomId(Object payload) {
+        if (payload instanceof String roomId) {
+            return roomId;
+        }
+        if (payload instanceof Map<?, ?> values) {
+            Object roomId = values.get("roomId");
+            return roomId != null ? roomId.toString() : null;
+        }
+        return null;
     }
     
     private SocketUser getUser(SocketIOClient client) {

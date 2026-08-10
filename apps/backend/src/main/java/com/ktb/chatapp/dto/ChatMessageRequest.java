@@ -16,6 +16,7 @@ public class ChatMessageRequest {
     private String type;
     private String content;
     private String msg;
+    private String clientMessageId;
     private Map<String, Object> fileData;
 
     /**

@@ -29,6 +29,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -161,19 +162,35 @@ public class ChatMessageHandler {
                 return;
             }
 
-            Message savedMessage = messageRepository.save(message);
+            message.setClientMessageId(data.getClientMessageId());
+
+            Message savedMessage;
+            try {
+                Counter.builder("owner1.message.save")
+                        .register(meterRegistry)
+                        .increment();
+                savedMessage = messageRepository.save(message);
+            } catch (DuplicateKeyException duplicateKeyException) {
+                if (data.getClientMessageId() == null || data.getClientMessageId().isBlank()) {
+                    throw duplicateKeyException;
+                }
+
+                Counter.builder("owner1.message.read")
+                        .register(meterRegistry)
+                        .increment();
+                savedMessage = messageRepository
+                        .findBySenderIdAndClientMessageId(socketUser.id(), data.getClientMessageId())
+                        .orElseThrow(() -> duplicateKeyException);
+            }
             MessageResponse messageResponse = createMessageResponse(savedMessage, sender);
 
             socketIOServer.getRoomOperations(roomId)
                     .sendEvent(MESSAGE, messageResponse);
-            client.sendEvent(MESSAGE, messageResponse);
 
             roomActivityNotifier.notifyMessageStored(roomId);
 
             // AI 멘션 처리
             aiService.handleAIMentions(roomId, socketUser.id(), messageContent);
-
-            sessionService.updateLastActivity(socketUser.id());
 
             // Record success metrics
             recordMessageSuccess(messageType);
@@ -244,6 +261,7 @@ public class ChatMessageHandler {
         var messageResponse = new MessageResponse();
         messageResponse.setId(message.getId());
         messageResponse.setRoomId(message.getRoomId());
+        messageResponse.setClientMessageId(message.getClientMessageId());
         messageResponse.setContent(message.getContent());
         messageResponse.setType(message.getType());
         messageResponse.setTimestamp(message.toTimestampMillis());

@@ -10,7 +10,9 @@ import org.springframework.context.ApplicationEventPublisher;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -29,18 +31,20 @@ class RoomActivityNotifierTest {
     @Test
     void notifyMessageStored_firstMessageOfRoom_publishesRecentMessageCount() {
         when(recentMessageCounter.countRecentMessages("room-1")).thenReturn(7);
+        RoomActivityNotifier notifier = notifier();
 
-        notifier().notifyMessageStored("room-1");
+        notifier.notifyMessageStored("room-1");
 
         ArgumentCaptor<RoomActivityEvent> eventCaptor =
                 ArgumentCaptor.forClass(RoomActivityEvent.class);
-        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        verify(eventPublisher, timeout(2000)).publishEvent(eventCaptor.capture());
         assertEquals("room-1", eventCaptor.getValue().getRoomId());
         assertEquals(7, eventCaptor.getValue().getRecentMessageCount());
+        notifier.shutdown();
     }
 
     @Test
-    void notifyMessageStored_everyMessage_publishes() {
+    void notifyMessageStored_messagesInShortWindow_areCoalesced() {
         when(recentMessageCounter.countRecentMessages("room-1")).thenReturn(1);
         RoomActivityNotifier notifier = notifier();
 
@@ -48,16 +52,21 @@ class RoomActivityNotifierTest {
         notifier.notifyMessageStored("room-1");
         notifier.notifyMessageStored("room-1");
 
-        verify(eventPublisher, times(3)).publishEvent(any(RoomActivityEvent.class));
-        verify(recentMessageCounter, times(3)).countRecentMessages("room-1");
+        verify(eventPublisher, timeout(2000)).publishEvent(any(RoomActivityEvent.class));
+        verify(eventPublisher, times(1)).publishEvent(any(RoomActivityEvent.class));
+        verify(recentMessageCounter, timeout(2000)).countRecentMessages("room-1");
+        verify(recentMessageCounter, times(1)).countRecentMessages("room-1");
+        notifier.shutdown();
     }
 
     @Test
     void notifyMessageStored_nullRoomId_doesNothing() {
-        notifier().notifyMessageStored(null);
+        RoomActivityNotifier notifier = notifier();
+        notifier.notifyMessageStored(null);
 
         verifyNoInteractions(recentMessageCounter);
         verify(eventPublisher, never()).publishEvent(any(RoomActivityEvent.class));
+        notifier.shutdown();
     }
 
     @Test
@@ -65,8 +74,10 @@ class RoomActivityNotifierTest {
         when(recentMessageCounter.countRecentMessages("room-1"))
                 .thenThrow(new RuntimeException("mongo down"));
 
-        notifier().notifyMessageStored("room-1");
+        RoomActivityNotifier notifier = notifier();
+        notifier.notifyMessageStored("room-1");
 
-        verify(eventPublisher, never()).publishEvent(any(RoomActivityEvent.class));
+        verify(eventPublisher, after(500).never()).publishEvent(any(RoomActivityEvent.class));
+        notifier.shutdown();
     }
 }

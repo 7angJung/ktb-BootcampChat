@@ -96,6 +96,8 @@ export const useChatRoom = ({ roomId, onNavigate, onReplace, asPath }) => {
         socketRef.current.off('error');
       }
 
+      socketClient.clearReadQueues(socketRef.current);
+
       // Clear timeouts
       if (loadMoreTimeoutRef.current) {
         clearTimeout(loadMoreTimeoutRef.current);

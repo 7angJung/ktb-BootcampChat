@@ -9,6 +9,7 @@ const ReadStatus = ({
   readers = [],
   className = '',
   messageId = null,
+  roomId = null,
   messageRef = null, // 메시지 요소의 ref 추가
   currentUserId = null // 현재 사용자 ID 추가
 }) => {
@@ -38,21 +39,21 @@ const ReadStatus = ({
 
   // 메시지를 읽음으로 표시하는 함수
   const markMessageAsRead = useCallback(async () => {
-    if (!messageId || !currentUserId || hasMarkedAsRead || 
+    if (!messageId || !roomId || !currentUserId || hasMarkedAsRead ||
         messageType === 'system' || !socketClient.canSend()) {
       return;
     }
 
     try {
       // Socket.IO를 통해 서버에 읽음 상태 전송
-      socketClient.markMessagesAsRead([messageId]);
+      socketClient.enqueueMessagesAsRead(roomId, [messageId]);
 
       setHasMarkedAsRead(true);
 
     } catch (error) {
       console.error('Error marking message as read:', error);
     }
-  }, [messageId, currentUserId, hasMarkedAsRead, messageType]);
+  }, [messageId, roomId, currentUserId, hasMarkedAsRead, messageType]);
 
   // Intersection Observer 설정
   useEffect(() => {

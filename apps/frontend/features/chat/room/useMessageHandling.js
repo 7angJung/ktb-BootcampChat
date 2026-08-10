@@ -3,6 +3,14 @@ import { Toast } from '@/components/Toast';
 import socketClient from '@/lib/socket/socketClient';
 import { useChatFileUpload } from '../files/useChatFileUpload';
 
+const createClientMessageId = () => {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
+
 export const useMessageHandling = (
   currentUser,
   roomId,
@@ -88,6 +96,7 @@ export const useMessageHandling = (
          room: roomId,
          type: 'file',
          content: messageData.content || '',
+         clientMessageId: createClientMessageId(),
          fileData: {
            _id: uploadResponse.data.file._id,
            filename: uploadResponse.data.file.filename,
@@ -103,7 +112,8 @@ export const useMessageHandling = (
        await socketClient.sendChatMessageAndWait({
          room: roomId,
          type: 'text',
-         content: messageData.content.trim()
+         content: messageData.content.trim(),
+         clientMessageId: createClientMessageId(),
        }, roomSocket);
      }
 

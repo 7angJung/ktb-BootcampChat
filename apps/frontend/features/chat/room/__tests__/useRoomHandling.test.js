@@ -326,7 +326,7 @@ describe('useRoomHandling', () => {
       handlers.onMessagesRead({
         userId: 'user-2',
         messageIds: ['message-1'],
-        timestamp: '2026-07-07T00:00:01.000Z',
+        readAt: '2026-07-07T00:00:01.000Z',
       });
       handlers.onMessage({ _id: 'message-2', timestamp: '2026-07-07T00:00:02.000Z' });
       handlers.onPreviousMessagesLoaded({
