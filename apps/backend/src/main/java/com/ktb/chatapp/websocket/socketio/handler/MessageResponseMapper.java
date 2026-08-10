@@ -35,6 +35,7 @@ public class MessageResponseMapper {
     public MessageResponse mapToMessageResponse(Message message, User sender) {
         MessageResponse.MessageResponseBuilder builder = MessageResponse.builder()
                 .id(message.getId())
+                .clientMessageId(message.getClientMessageId())
                 .content(message.getContent())
                 .type(message.getType())
                 .timestamp(message.toTimestampMillis())

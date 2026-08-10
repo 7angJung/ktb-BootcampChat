@@ -110,7 +110,32 @@ const subscribeMappedEvents = (emitter, handlers, eventMap) => {
   };
 };
 
-export const createSocketClient = (service = socketService) => ({
+export const createSocketClient = (service = socketService) => {
+  const readQueues = new Map();
+
+  const queueKey = (roomId, socket) => `${socket?.id || 'default'}:${roomId}`;
+
+  const flushReadQueue = (key) => {
+    const queue = readQueues.get(key);
+    if (!queue) return;
+
+    const messageIds = [...queue.messageIds].slice(0, 50);
+    messageIds.forEach(messageId => queue.messageIds.delete(messageId));
+
+    try {
+      client.markMessagesAsRead(queue.roomId, messageIds, queue.socket);
+    } catch (error) {
+      messageIds.forEach(messageId => queue.messageIds.add(messageId));
+    }
+
+    if (queue.messageIds.size > 0) {
+      queue.timer = setTimeout(() => flushReadQueue(key), 100);
+    } else {
+      queue.timer = null;
+    }
+  };
+
+  const client = {
   connect: (options) => service.connect(options),
   disconnect: () => service.disconnect(),
   isConnected: () => service.isConnected(),
@@ -136,7 +161,7 @@ export const createSocketClient = (service = socketService) => ({
       timeoutMessage: '메시지 로딩 시간이 초과되었습니다.',
       send: () => sendDomainEvent(service, socket, 'fetchPreviousMessages', payload),
     }),
-  joinRoom: (roomId, socket) => sendDomainEvent(service, socket, 'joinRoom', roomId),
+  joinRoom: (roomId, socket) => sendDomainEvent(service, socket, 'joinRoom', { roomId }),
   joinRoomAndWait: (roomId, socket, { timeoutMs = 10000 } = {}) =>
     waitForSocketEvent({
       socket,
@@ -144,16 +169,55 @@ export const createSocketClient = (service = socketService) => ({
       errorEvents: ['joinRoomError', 'error'],
       timeoutMs,
       timeoutMessage: '채팅방 입장 시간이 초과되었습니다.',
-      send: () => sendDomainEvent(service, socket, 'joinRoom', roomId),
+      send: () => sendDomainEvent(service, socket, 'joinRoom', { roomId }),
     }),
   leaveRoom: (roomId, socket) => sendDomainEvent(service, socket, 'leaveRoom', roomId),
   tryLeaveRoom: (roomId, socket) => service.trySendOn(socket, 'leaveRoom', roomId),
-  markMessagesAsRead: (messageIds, socket) => {
+  markMessagesAsRead: (roomId, messageIds, socket) => {
+    if (typeof roomId !== 'string' || !roomId.trim()) {
+      throw new Error('roomId must be a non-empty string');
+    }
     if (!Array.isArray(messageIds)) {
       throw new Error('messageIds must be an array');
     }
 
-    return sendDomainEvent(service, socket, 'markMessagesAsRead', { messageIds });
+    const uniqueMessageIds = [...new Set(messageIds.filter(Boolean))];
+    if (uniqueMessageIds.length === 0 || uniqueMessageIds.length > 50) {
+      throw new Error('messageIds must contain 1 to 50 ids');
+    }
+
+    return sendDomainEvent(service, socket, 'markMessagesAsRead', {
+      roomId,
+      messageIds: uniqueMessageIds,
+    });
+  },
+  enqueueMessagesAsRead: (roomId, messageIds, socket) => {
+    if (typeof roomId !== 'string' || !roomId.trim() || !Array.isArray(messageIds)) {
+      throw new Error('roomId and messageIds are required');
+    }
+
+    const key = queueKey(roomId, socket);
+    const queue = readQueues.get(key) || {
+      roomId,
+      socket,
+      messageIds: new Set(),
+      timer: null,
+    };
+
+    messageIds.filter(Boolean).forEach(messageId => queue.messageIds.add(messageId));
+    readQueues.set(key, queue);
+
+    if (!queue.timer) {
+      queue.timer = setTimeout(() => flushReadQueue(key), 100);
+    }
+  },
+  clearReadQueues: (socket) => {
+    for (const [key, queue] of readQueues.entries()) {
+      if (!socket || queue.socket === socket || queue.socket?.id === socket.id) {
+        if (queue.timer) clearTimeout(queue.timer);
+        readQueues.delete(key);
+      }
+    }
   },
   sendMessageReaction: (messageId, reaction, type, socket) => sendDomainEvent(service, socket, 'messageReaction', {
     messageId,
@@ -170,7 +234,10 @@ export const createSocketClient = (service = socketService) => ({
       unsubscribeManager();
     };
   },
-});
+  };
+
+  return client;
+};
 
 const socketClient = createSocketClient();
 

@@ -8,12 +8,16 @@ import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Metrics;
 import jakarta.annotation.Nullable;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -31,6 +35,12 @@ public class MessageLoader {
     private final UserRepository userRepository;
     private final MessageResponseMapper messageResponseMapper;
     private final MessageReadStatusService messageReadStatusService;
+    private MeterRegistry meterRegistry = Metrics.globalRegistry;
+
+    @Autowired
+    void setMeterRegistry(MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
+    }
 
     private static final int BATCH_SIZE = 30;
 
@@ -56,6 +66,9 @@ public class MessageLoader {
             String userId) {
         Pageable pageable = PageRequest.of(0, limit, Sort.by("timestamp").descending());
 
+        Counter.builder("owner1.message.read")
+                .register(meterRegistry)
+                .increment();
         Page<Message> messagePage = messageRepository
                 .findByRoomIdAndTimestampBefore(roomId, before, pageable);
 
@@ -65,7 +78,7 @@ public class MessageLoader {
         List<Message> sortedMessages = messages.reversed();
         
         var messageIds = sortedMessages.stream().map(Message::getId).toList();
-        messageReadStatusService.updateReadStatus(messageIds, userId);
+        messageReadStatusService.updateReadStatus(roomId, messageIds, userId);
         
         // 메시지 응답 생성
         List<MessageResponse> messageResponses = sortedMessages.stream()

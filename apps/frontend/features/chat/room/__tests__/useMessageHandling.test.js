@@ -51,11 +51,12 @@ describe('useMessageHandling', () => {
     });
 
     expect(socketClient.sendChatMessageAndWait).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         room: 'room-1',
         type: 'text',
         content: 'hello',
-      },
+        clientMessageId: expect.any(String),
+      }),
       roomSocket,
     );
   });
@@ -105,10 +106,11 @@ describe('useMessageHandling', () => {
     });
 
     expect(socketClient.sendChatMessageAndWait).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         room: 'room-1',
         type: 'file',
         content: 'attached',
+        clientMessageId: expect.any(String),
         fileData: {
           _id: 'file-1',
           filename: 'stored.pdf',
@@ -116,7 +118,7 @@ describe('useMessageHandling', () => {
           mimetype: 'application/pdf',
           size: 128,
         },
-      },
+      }),
       roomSocket,
     );
     expect(result.current.filePreview).toBeNull();

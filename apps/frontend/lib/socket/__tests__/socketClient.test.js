@@ -107,7 +107,7 @@ describe('socketClient', () => {
     client.fetchPreviousMessages({ roomId: 'room-1', limit: 30 });
     client.joinRoom('room-1');
     client.leaveRoom('room-1');
-    client.markMessagesAsRead(['message-1']);
+    client.markMessagesAsRead('room-1', ['message-1']);
 
     expect(service.send).toHaveBeenCalledWith('chatMessage', {
       room: 'room-1',
@@ -118,9 +118,10 @@ describe('socketClient', () => {
       roomId: 'room-1',
       limit: 30,
     });
-    expect(service.send).toHaveBeenCalledWith('joinRoom', 'room-1');
+    expect(service.send).toHaveBeenCalledWith('joinRoom', { roomId: 'room-1' });
     expect(service.send).toHaveBeenCalledWith('leaveRoom', 'room-1');
     expect(service.send).toHaveBeenCalledWith('markMessagesAsRead', {
+      roomId: 'room-1',
       messageIds: ['message-1'],
     });
   });
@@ -135,7 +136,7 @@ describe('socketClient', () => {
 
     client.joinRoom('room-1', socket);
 
-    expect(service.sendOn).toHaveBeenCalledWith(socket, 'joinRoom', 'room-1');
+    expect(service.sendOn).toHaveBeenCalledWith(socket, 'joinRoom', { roomId: 'room-1' });
     expect(service.send).not.toHaveBeenCalled();
   });
 
@@ -147,9 +148,10 @@ describe('socketClient', () => {
     };
     const client = createSocketClient(service);
 
-    client.markMessagesAsRead(['message-1'], socket);
+    client.markMessagesAsRead('room-1', ['message-1'], socket);
 
     expect(service.sendOn).toHaveBeenCalledWith(socket, 'markMessagesAsRead', {
+      roomId: 'room-1',
       messageIds: ['message-1'],
     });
     expect(service.send).not.toHaveBeenCalled();
@@ -178,7 +180,7 @@ describe('socketClient', () => {
     socket.emitToClient('joinRoomSuccess', { roomId: 'room-1' });
 
     await expect(join).resolves.toEqual({ roomId: 'room-1' });
-    expect(service.sendOn).toHaveBeenCalledWith(socket, 'joinRoom', 'room-1');
+    expect(service.sendOn).toHaveBeenCalledWith(socket, 'joinRoom', { roomId: 'room-1' });
     expect(socket.listenerCount('joinRoomSuccess')).toBe(0);
     expect(socket.listenerCount('joinRoomError')).toBe(0);
     expect(socket.listenerCount('error')).toBe(0);
@@ -280,7 +282,7 @@ describe('socketClient', () => {
     };
     const client = createSocketClient(service);
 
-    expect(() => client.markMessagesAsRead({ messageIds: ['message-1'] })).toThrowError(
+    expect(() => client.markMessagesAsRead('room-1', { messageIds: ['message-1'] })).toThrowError(
       'messageIds must be an array',
     );
     expect(service.send).not.toHaveBeenCalled();
@@ -341,7 +343,12 @@ describe('socketClient', () => {
     const unsubscribe = client.subscribeRoomEvents(socket, handlers);
 
     socket.emitToClient('participantsUpdate', ['user-1']);
-    socket.emitToClient('messagesRead', { userId: 'user-1', messageIds: ['message-1'] });
+    socket.emitToClient('messagesRead', {
+      roomId: 'room-1',
+      userId: 'user-1',
+      messageIds: ['message-1'],
+      readAt: '2026-08-10T00:00:00Z',
+    });
     socket.emitToClient('message', { _id: 'message-1' });
     socket.emitToClient('previousMessagesLoaded', { messages: [], hasMore: false });
     socket.emitToClient('messageReactionUpdate', { messageId: 'message-1' });
@@ -349,7 +356,12 @@ describe('socketClient', () => {
     socket.emitToClient('error', { code: 'MESSAGE_REJECTED' });
 
     expect(handlers.onParticipantsUpdate).toHaveBeenCalledWith(['user-1']);
-    expect(handlers.onMessagesRead).toHaveBeenCalledWith({ userId: 'user-1', messageIds: ['message-1'] });
+    expect(handlers.onMessagesRead).toHaveBeenCalledWith({
+      roomId: 'room-1',
+      userId: 'user-1',
+      messageIds: ['message-1'],
+      readAt: '2026-08-10T00:00:00Z',
+    });
     expect(handlers.onMessage).toHaveBeenCalledWith({ _id: 'message-1' });
     expect(handlers.onPreviousMessagesLoaded).toHaveBeenCalledWith({ messages: [], hasMore: false });
     expect(handlers.onMessageReactionUpdate).toHaveBeenCalledWith({ messageId: 'message-1' });
