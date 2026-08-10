@@ -1,16 +1,13 @@
 package com.ktb.chatapp.websocket.socketio.handler;
 
 import com.corundumstudio.socketio.SocketIOClient;
-import com.corundumstudio.socketio.SocketIOServer;
 import com.corundumstudio.socketio.annotation.OnEvent;
 import com.ktb.chatapp.dto.FetchMessagesRequest;
 import com.ktb.chatapp.dto.FetchMessagesResponse;
 import com.ktb.chatapp.dto.JoinRoomSuccessResponse;
+import com.ktb.chatapp.dto.RoomResponse;
 import com.ktb.chatapp.dto.UserResponse;
-import com.ktb.chatapp.model.Message;
-import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.model.Room;
-import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
@@ -34,14 +31,10 @@ import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.*;
 @RequiredArgsConstructor
 public class RoomJoinHandler {
 
-    private final SocketIOServer socketIOServer;
-    private final MessageRepository messageRepository;
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     private final UserRooms userRooms;
     private final MessageLoader messageLoader;
-    private final MessageResponseMapper messageResponseMapper;
-    private final RoomLeaveHandler roomLeaveHandler;
     
     @OnEvent(JOIN_ROOM)
     public void handleJoinRoom(SocketIOClient client, String roomId) {
@@ -54,65 +47,65 @@ public class RoomJoinHandler {
                 return;
             }
             
-            if (userRepository.findById(userId).isEmpty()) {
+            var userOpt = userRepository.findById(userId);
+            if (userOpt.isEmpty()) {
                 client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "User not found"));
                 return;
             }
             
-            if (roomRepository.findById(roomId).isEmpty()) {
-                client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다."));
-                return;
-            }
-            
-            // 이미 해당 방에 참여 중인지 확인
-            if (userRooms.isInRoom(userId, roomId)) {
-                log.debug("User {} already in room {}", userId, roomId);
-                client.joinRoom(roomId);
-                client.sendEvent(JOIN_ROOM_SUCCESS, Map.of("roomId", roomId));
-                return;
-            }
-
-            roomRepository.addParticipant(roomId, userId);
-
-            // Join socket room and add to user's room set
-            client.joinRoom(roomId);
-            userRooms.add(userId, roomId);
-
-            Message joinMessage = Message.builder()
-                .roomId(roomId)
-                .content(userName + "님이 입장하였습니다.")
-                .type(MessageType.system)
-                .timestamp(LocalDateTime.now())
-                .mentions(new ArrayList<>())
-                .reactions(new HashMap<>())
-                .readers(new ArrayList<>())
-                .metadata(new HashMap<>())
-                .build();
-
-            joinMessage = messageRepository.save(joinMessage);
-
-            // 초기 메시지 로드
-            FetchMessagesRequest req = new FetchMessagesRequest(roomId, 30, null);
-            FetchMessagesResponse messageLoadResult = messageLoader.loadMessages(req, userId);
-
-            // 업데이트된 room 다시 조회하여 최신 participantIds 가져오기
-            Optional<Room> roomOpt = roomRepository.findById(roomId);
+            var roomOpt = roomRepository.findById(roomId);
             if (roomOpt.isEmpty()) {
                 client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다."));
                 return;
             }
 
+            Room room = roomOpt.get();
+            if (!room.getParticipantIds().contains(userId)) {
+                client.sendEvent(JOIN_ROOM_ERROR, Map.of(
+                    "message", "먼저 채팅방 입장 절차를 완료해주세요."
+                ));
+                return;
+            }
+
+            // REST 입장 API가 참가자 등록을 담당한다. Socket은 연결 상태만 복구한다.
+            client.joinRoom(roomId);
+            if (!userRooms.isInRoom(userId, roomId)) {
+                userRooms.add(userId, roomId);
+            }
+
+            // 초기 메시지 로드
+            FetchMessagesRequest req = new FetchMessagesRequest(roomId, 30, null);
+            FetchMessagesResponse messageLoadResult = messageLoader.loadMessages(req, userId);
+
             // 참가자 정보 조회
-            List<UserResponse> participants = roomOpt.get().getParticipantIds()
+            List<UserResponse> participants = room.getParticipantIds()
                     .stream()
                     .map(userRepository::findById)
                     .filter(Optional::isPresent)
                     .map(Optional::get)
                     .map(UserResponse::from)
                     .toList();
+
+            UserResponse creator = participants.stream()
+                .filter(participant -> Objects.equals(participant.getId(), room.getCreator()))
+                .findFirst()
+                .orElseGet(() -> room.getCreator() == null ? null : userRepository.findById(room.getCreator())
+                    .map(UserResponse::from)
+                    .orElse(null));
+
+            RoomResponse roomResponse = RoomResponse.builder()
+                .id(room.getId())
+                .name(room.getName())
+                .hasPassword(room.isHasPassword())
+                .creator(creator)
+                .participants(participants)
+                .createdAtDateTime(room.getCreatedAt() != null ? room.getCreatedAt() : LocalDateTime.now())
+                .isCreator(Objects.equals(room.getCreator(), userId))
+                .build();
             
             JoinRoomSuccessResponse response = JoinRoomSuccessResponse.builder()
                 .roomId(roomId)
+                .room(roomResponse)
                 .participants(participants)
                 .messages(messageLoadResult.getMessages())
                 .hasMore(messageLoadResult.isHasMore())
@@ -120,14 +113,6 @@ public class RoomJoinHandler {
                 .build();
 
             client.sendEvent(JOIN_ROOM_SUCCESS, response);
-
-            // 입장 메시지 브로드캐스트
-            socketIOServer.getRoomOperations(roomId)
-                .sendEvent(MESSAGE, messageResponseMapper.mapToMessageResponse(joinMessage, null));
-
-            // 참가자 목록 업데이트 브로드캐스트
-            socketIOServer.getRoomOperations(roomId)
-                .sendEvent(PARTICIPANTS_UPDATE, participants);
 
             log.info("User {} joined room {} successfully. Message count: {}, hasMore: {}",
                 userName, roomId, messageLoadResult.getMessages().size(), messageLoadResult.isHasMore());

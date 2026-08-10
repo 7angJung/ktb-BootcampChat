@@ -27,17 +27,6 @@ function NewChatRoom() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const joinRoom = async (roomId, password) => {
-    try {
-      await api.post(`/api/rooms/${roomId}/join`, { password });
-
-      router.push(`/chat/${roomId}`);
-    } catch (error) {
-      console.error('Room join error:', error);
-      throw error;
-    }
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -66,10 +55,11 @@ function NewChatRoom() {
       });
 
       const { data } = response.data;
-      await joinRoom(data._id, formData.hasPassword ? formData.password : undefined);
+      // 생성자는 createRoom에서 이미 참가자로 등록된다.
+      await router.push(`/chat/${data._id}`);
 
     } catch (error) {
-      console.error('Room creation/join error:', error);
+      console.error('Room creation error:', error);
       setError(error.message);
     } finally {
       setLoading(false);
