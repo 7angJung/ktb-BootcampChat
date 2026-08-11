@@ -18,6 +18,8 @@ const ChatInput = forwardRef(({
   fileInputRef,
   disabled = false,
   uploading: externalUploading = false,
+  uploadProgress: externalUploadProgress = 0,
+  uploadError: externalUploadError = null,
   room = null,
 }, ref) => {
   const emojiPickerRef = useRef(null);
@@ -430,6 +432,17 @@ const ChatInput = forwardRef(({
                 <SendIcon />
               </IconButton>
             </HStack>
+
+            {externalUploading && (
+              <span className="text-xs text-gray-400" role="status">
+                파일 업로드 중... {Math.round(externalUploadProgress)}%
+              </span>
+            )}
+            {externalUploadError && (
+              <span className="text-xs text-red-400" role="alert">
+                파일 업로드 실패: {externalUploadError}
+              </span>
+            )}
 
             <HStack $css={{ gap: '$100' }}>
               <IconButton
