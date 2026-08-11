@@ -112,17 +112,31 @@ tail -f logs/app.log
    ENCRYPTION_KEY=your_encryption_key_64_hex_chars
    ENCRYPTION_SALT=your_encryption_salt_32_hex_chars
 
-   # 데이터베이스
-   MONGO_URI=mongodb://localhost:27017/bootcamp-chat
-   REDIS_HOST=localhost
+   # 운영 데이터베이스. 연결 문자열과 비밀번호는 저장소에 기록하지 않는다.
+   MONGO_URI=<운영 MongoDB 연결 문자열>
+   REDIS_HOST=10.0.101.244
    REDIS_PORT=6379
+   REDIS_PASSWORD=<운영 Redis 비밀번호>
 
    # 서버 포트
    PORT=5001
    WS_PORT=5002
 
+   # 프로필 이미지 S3 저장. 채팅 첨부파일은 로컬 저장 유지
+   FILE_STORAGE_TYPE=s3
+   S3_BUCKET=ktbt-lt-bucket-186812476907-ap-northeast-2-an
+   AWS_REGION=ap-northeast-2
+   CORS_ALLOWED_ORIGINS=https://chat.goorm-ktb-005.goorm.team
+   SOCKETIO_SERVER_ORIGIN=https://chat.goorm-ktb-005.goorm.team
+
    # OpenAI API
    OPENAI_API_KEY=sk-...
+   ```
+
+   systemd 서비스에 `EnvironmentFile`이 별도로 설정된 서버라면 `.env`가 아니라 해당 파일에 같은 운영값을 넣어야 한다. 현재 호스트 설정을 먼저 확인한다.
+
+   ```bash
+   systemctl cat ktb-backend.service
    ```
 
 3. **MongoDB 및 Redis 실행 확인**

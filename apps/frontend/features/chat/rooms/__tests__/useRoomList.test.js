@@ -11,7 +11,9 @@ vi.mock('@/services/axios', () => ({
   },
 }));
 
-const roomsResponse = (rooms) => ({ data: { data: rooms } });
+const roomsResponse = (rooms, metadata = { page: 0, hasMore: false }) => ({
+  data: { data: rooms, metadata },
+});
 
 const renderRoomList = () =>
   renderHook(() =>
@@ -101,5 +103,58 @@ describe('useRoomList', () => {
 
     expect(result.current.error).toBeNull();
     expect(result.current.rooms).toEqual([{ _id: 'room-1' }]);
+  });
+
+  it('requests rooms in pages of 20 and appends the next page without duplicates', async () => {
+    axiosInstance.get
+      .mockResolvedValueOnce(roomsResponse(
+        [{ _id: 'room-1' }, { _id: 'room-2' }],
+        { page: 0, hasMore: true }
+      ))
+      .mockResolvedValueOnce(roomsResponse(
+        [{ _id: 'room-2', name: 'updated' }, { _id: 'room-3' }],
+        { page: 1, hasMore: false }
+      ));
+
+    const { result } = renderRoomList();
+
+    await act(async () => {
+      await result.current.fetchRooms();
+    });
+    await act(async () => {
+      await result.current.loadMoreRooms();
+    });
+
+    expect(axiosInstance.get).toHaveBeenNthCalledWith(1, '/api/rooms', {
+      params: { page: 0, size: 20 },
+    });
+    expect(axiosInstance.get).toHaveBeenNthCalledWith(2, '/api/rooms', {
+      params: { page: 1, size: 20 },
+    });
+    expect(result.current.rooms).toEqual([
+      { _id: 'room-1' },
+      { _id: 'room-2', name: 'updated' },
+      { _id: 'room-3' },
+    ]);
+    expect(result.current.hasMore).toBe(false);
+  });
+
+  it('keeps loaded rooms when loading the next page fails', async () => {
+    axiosInstance.get
+      .mockResolvedValueOnce(roomsResponse([{ _id: 'room-1' }], { page: 0, hasMore: true }))
+      .mockRejectedValueOnce(new Error('SERVER_UNREACHABLE'));
+
+    const { result } = renderRoomList();
+
+    await act(async () => {
+      await result.current.fetchRooms();
+    });
+    await act(async () => {
+      await result.current.loadMoreRooms();
+    });
+
+    expect(result.current.rooms).toEqual([{ _id: 'room-1' }]);
+    expect(result.current.error).toMatchObject({ title: '채팅방 추가 로드 실패' });
+    expect(result.current.loadingMore).toBe(false);
   });
 });

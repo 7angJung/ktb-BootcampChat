@@ -1,8 +1,22 @@
 package com.ktb.chatapp.service;
 
 import com.ktb.chatapp.repository.MessageRepository;
+import com.ktb.chatapp.model.Message;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Metrics;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Map;
+import java.util.stream.Collectors;
+import org.bson.Document;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.AggregationResults;
+import org.springframework.data.mongodb.core.query.Criteria;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -16,9 +30,42 @@ public class RecentMessageCounter {
     static final Duration RECENT_WINDOW = Duration.ofMinutes(30);
 
     private final MessageRepository messageRepository;
+    private final MongoTemplate mongoTemplate;
+    private MeterRegistry meterRegistry = Metrics.globalRegistry;
+
+    @Autowired
+    void setMeterRegistry(MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
+    }
 
     public int countRecentMessages(String roomId) {
+        Counter.builder("owner1.room_activity.count")
+                .register(meterRegistry)
+                .increment();
         LocalDateTime since = LocalDateTime.now().minus(RECENT_WINDOW);
         return (int) messageRepository.countRecentMessagesByRoomId(roomId, since);
+    }
+
+    public Map<String, Integer> countRecentMessages(Collection<String> roomIds) {
+        if (roomIds == null || roomIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        LocalDateTime since = LocalDateTime.now().minus(RECENT_WINDOW);
+        Aggregation aggregation = Aggregation.newAggregation(
+                Aggregation.match(Criteria.where("room").in(roomIds)
+                        .and("timestamp").gte(since)),
+                Aggregation.group("room").count().as("count"));
+
+        AggregationResults<Document> results = mongoTemplate.aggregate(
+                aggregation,
+                mongoTemplate.getCollectionName(Message.class),
+                Document.class);
+
+        return results.getMappedResults().stream()
+                .filter(result -> result.get("_id") != null)
+                .collect(Collectors.toMap(
+                        result -> result.get("_id").toString(),
+                        result -> ((Number) result.getOrDefault("count", 0)).intValue()));
     }
 }

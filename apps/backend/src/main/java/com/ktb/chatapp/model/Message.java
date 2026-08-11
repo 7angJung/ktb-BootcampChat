@@ -9,6 +9,8 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.CompoundIndexes;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -26,6 +28,14 @@ import java.util.Set;
 @NoArgsConstructor
 @AllArgsConstructor
 @Document(collection = "messages")
+@CompoundIndexes({
+        @CompoundIndex(name = "room_timestamp_desc", def = "{'room': 1, 'timestamp': -1}"),
+        @CompoundIndex(
+                name = "message_sender_client_message_unique",
+                def = "{'sender': 1, 'clientMessageId': 1}",
+                unique = true,
+                partialFilter = "{'clientMessageId': {'$type': 'string'}}")
+})
 public class Message {
 
     @Id
@@ -41,6 +51,8 @@ public class Message {
     // Mongo 문서 필드명 "sender" 사용
     @Field("sender")
     private String senderId;
+
+    private String clientMessageId;
 
     private MessageType type;
 

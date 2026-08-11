@@ -25,6 +25,8 @@ public class MessageResponse {
     
     @JsonProperty("room")
     private String roomId;
+
+    private String clientMessageId;
     
     private String content;
     

@@ -91,6 +91,10 @@ make verify-java
 | `MONGO_URI` | ✅ | 없음 | MongoDB 연결 문자열              |
 | `REDIS_HOST` | ✅ | 없음 | Redis 호스트                    |
 | `REDIS_PORT` | ✅ | 없음 | Redis 포트                      |
+| `REDIS_PASSWORD` | ❌ | 빈 문자열 | Redis 비밀번호                  |
+| `FILE_STORAGE_TYPE` | ❌ | `local` | `s3` 선택 시 `profiles/*`만 S3에 저장하고 채팅 파일은 로컬 저장 |
+| `S3_BUCKET` | `FILE_STORAGE_TYPE=s3`일 때 ✅ | 없음 | 프로필 이미지 S3 버킷 이름     |
+| `AWS_REGION` | `FILE_STORAGE_TYPE=s3`일 때 ✅ | `ap-northeast-2` | S3 리전                  |
 | `PORT` | ❌ | `5001` | HTTP API 포트 (`server.port`) |
 | `WS_PORT` | ❌ | `5002` | Socket.IO 서버 포트             |
 | `CORS_ALLOWED_ORIGINS` | ❌ | `*` | REST API CORS 허용 Origin 목록. 쉼표로 구분 |

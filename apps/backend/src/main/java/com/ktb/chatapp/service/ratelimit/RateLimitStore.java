@@ -1,6 +1,8 @@
 package com.ktb.chatapp.service.ratelimit;
 
 import com.ktb.chatapp.model.RateLimit;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 
 /**
@@ -24,4 +26,12 @@ public interface RateLimitStore {
      * @return the saved rate limit
      */
     RateLimit save(RateLimit rateLimit);
+
+    default RateLimitDecision incrementIfAllowed(
+            String clientId,
+            int maxRequests,
+            Duration window,
+            Instant now) {
+        throw new UnsupportedOperationException("Atomic rate limit update is not available");
+    }
 }

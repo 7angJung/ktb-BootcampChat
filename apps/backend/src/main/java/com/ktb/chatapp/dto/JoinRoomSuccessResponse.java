@@ -16,6 +16,7 @@ import java.util.List;
 @Builder
 public class JoinRoomSuccessResponse {
     private String roomId;
+    private RoomResponse room;
     private List<UserResponse> participants;
     private List<MessageResponse> messages;
     private boolean hasMore;

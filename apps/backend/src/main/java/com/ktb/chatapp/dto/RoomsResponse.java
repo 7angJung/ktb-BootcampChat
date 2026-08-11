@@ -13,6 +13,6 @@ import java.util.List;
 @AllArgsConstructor
 public class RoomsResponse {
     private boolean success = true;
-    private List<RoomResponse> data;
+    private List<RoomListResponse> data;
     private PageMetadata metadata;
 }

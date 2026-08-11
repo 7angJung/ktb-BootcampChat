@@ -5,15 +5,16 @@ import com.corundumstudio.socketio.SocketIOServer;
 import com.corundumstudio.socketio.annotation.OnEvent;
 import com.ktb.chatapp.dto.MarkAsReadRequest;
 import com.ktb.chatapp.dto.MessagesReadResponse;
-import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.model.User;
-import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
+import com.ktb.chatapp.service.ReadStatusUpdate;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -33,7 +34,6 @@ public class MessageReadHandler {
     
     private final SocketIOServer socketIOServer;
     private final MessageReadStatusService messageReadStatusService;
-    private final MessageRepository messageRepository;
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     
@@ -46,15 +46,17 @@ public class MessageReadHandler {
                 return;
             }
 
-            if (data == null || data.getMessageIds() == null || data.getMessageIds().isEmpty()) {
+            if (data == null || data.getRoomId() == null || data.getRoomId().isBlank()
+                    || data.getMessageIds() == null || data.getMessageIds().isEmpty()) {
+                client.sendEvent(ERROR, Map.of("message", "Invalid read request"));
                 return;
             }
-            
-            String roomId = messageRepository.findById(data.getMessageIds().getFirst())
-                    .map(Message::getRoomId).orElse(null);
-            
-            if (roomId == null || roomId.isBlank()) {
-                client.sendEvent(ERROR, Map.of("message", "Invalid room"));
+
+            List<String> messageIds = new LinkedHashSet<>(data.getMessageIds()).stream()
+                    .filter(id -> id != null && !id.isBlank())
+                    .toList();
+            if (messageIds.isEmpty() || messageIds.size() > 50) {
+                client.sendEvent(ERROR, Map.of("message", "messageIds must contain 1 to 50 ids"));
                 return;
             }
 
@@ -64,15 +66,23 @@ public class MessageReadHandler {
                 return;
             }
 
+            String roomId = data.getRoomId();
             Room room = roomRepository.findById(roomId).orElse(null);
             if (room == null || !room.getParticipantIds().contains(userId)) {
                 client.sendEvent(ERROR, Map.of("message", "Room access denied"));
                 return;
             }
             
-            messageReadStatusService.updateReadStatus(data.getMessageIds(), userId);
+            ReadStatusUpdate update = messageReadStatusService.updateReadStatus(roomId, messageIds, userId);
+            if (update.messageIds().isEmpty()) {
+                return;
+            }
 
-            MessagesReadResponse response = new MessagesReadResponse(userId, data.getMessageIds());
+            MessagesReadResponse response = new MessagesReadResponse(
+                    roomId,
+                    userId,
+                    update.messageIds(),
+                    update.readAt());
 
             // Broadcast to room
             socketIOServer.getRoomOperations(roomId)

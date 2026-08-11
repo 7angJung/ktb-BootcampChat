@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# Node.js / Next.js generated files
+node_modules/
+.next/
+
+# Java / Maven generated files
+target/
+
+# Local environment files containing secrets
+.env
+.env.local
+.env.production

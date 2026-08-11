@@ -2,7 +2,6 @@ import { useRef, useEffect, useCallback } from 'react';
 import socketClient from '@/lib/socket/socketClient';
 import { useAuth } from '@/contexts/AuthContext';
 import { Toast } from '@/components/Toast';
-import api, { getAuthHeaders } from '@/lib/api/client';
 import {
   createRoomEventHandlers,
   processLoadedRoomMessages,
@@ -17,7 +16,7 @@ export const useRoomHandling = ({
   cleanup,
   handleReactionUpdate,
 }) => {
-  const { onReplace, asPath } = route;
+  const { onReplace } = route;
   const { currentUser } = state;
   const {
     socketRef,
@@ -40,7 +39,7 @@ export const useRoomHandling = ({
     setupSucceeded,
     setupFailed,
   } = actions;
-  const { user, refreshToken, logout } = useAuth();
+  const { user, logout } = useAuth();
   const setupPromiseRef = useRef(null);
   const roomEventsUnsubscribeRef = useRef(null);
   const MAX_SOCKET_RECONNECT_ATTEMPTS = 3;
@@ -114,25 +113,6 @@ export const useRoomHandling = ({
     onReplace,
   ]);
 
-  const handleSessionError = useCallback(async () => {
-    try {
-      if (!user) {
-        throw new Error('No user session found');
-      }
-
-      await refreshToken();
-      if (mountedRef.current) {
-        return true;
-      }
-    } catch (error) {}
-
-    if (mountedRef.current) {
-      await logout();
-      onReplace('/?redirect=' + asPath);
-    }
-    return false;
-  }, [user, refreshToken, mountedRef, logout, onReplace, asPath]);
-
   const setupSocket = useCallback(async () => {
     try {
       if (!user?.token || !user?.sessionId) {
@@ -190,48 +170,6 @@ export const useRoomHandling = ({
     }
   }, [userRooms, onReplace, socketRef, attachSocket, user]);
 
-  const fetchRoomData = useCallback(
-    async (roomId) => {
-      try {
-        if (!user?.token || !user?.sessionId) {
-          await handleSessionError();
-          throw new Error('인증 정보가 유효하지 않습니다.');
-        }
-
-        if (!roomId || !mountedRef.current) {
-          throw new Error('채팅방 정보가 올바르지 않습니다.');
-        }
-
-        let response;
-        try {
-          response = await api.get(`/api/rooms/${roomId}`, {
-            handleAuthError: false,
-            headers: getAuthHeaders(user),
-          });
-        } catch (error) {
-          if (error.response?.status === 401) {
-            const refreshed = await handleSessionError();
-            if (refreshed && mountedRef.current) {
-              return fetchRoomData(roomId);
-            }
-            throw new Error('인증이 만료되었습니다.');
-          }
-          throw error;
-        }
-
-        const data = response.data;
-        if (!data.success || !data.data) {
-          throw new Error('채팅방 데이터가 올바르지 않습니다.');
-        }
-
-        return data.data;
-      } catch (error) {
-        throw error;
-      }
-    },
-    [user, mountedRef, handleSessionError]
-  );
-
   const joinRoom = useCallback(
     async (roomId) => {
       if (!roomId || !mountedRef.current) {
@@ -261,6 +199,9 @@ export const useRoomHandling = ({
 
     const joinResult = await joinRoom(roomId);
 
+    if (joinResult?.room) {
+      setRoom(joinResult.room);
+    }
     if (Array.isArray(joinResult?.messages)) {
       processMessages(joinResult.messages, joinResult.hasMore, true);
     }
@@ -274,6 +215,7 @@ export const useRoomHandling = ({
     mountedRef,
     setupCompleteRef,
     joinRoom,
+    setRoom,
     processMessages,
   ]);
 
@@ -337,47 +279,44 @@ export const useRoomHandling = ({
         // 1. Socket Setup
         attachSocket(await setupSocket());
 
-        // 2. Fetch Room Data
-        const roomData = await fetchRoomData(roomId);
-
-        // Ensure current user is included in participants for display
-        if (currentUser && roomData.participants) {
-          const isUserInParticipants = roomData.participants.some(
-            (p) => p._id === currentUser.id || p.id === currentUser.id
-          );
-
-          if (!isUserInParticipants) {
-            roomData.participants = [
-              ...roomData.participants,
-              {
-                _id: currentUser.id,
-                id: currentUser.id,
-                name: currentUser.name,
-                email: currentUser.email,
-              },
-            ];
-          }
-        }
-
-        // 3. Setup Event Listeners
+        // 2. Subscribe before joining so no room event is missed.
         if (mountedRef.current) {
           setupEventListeners();
         }
 
-        // 4. Join Room and Load Messages
+        // 3. Socket join returns room metadata and initial messages together.
         if (mountedRef.current && socketRef.current?.connected) {
           const joinResult = await joinRoom(roomId);
-
-          if (Array.isArray(joinResult?.messages)) {
-            processMessages(joinResult.messages, joinResult.hasMore, true);
-          } else {
-            await loadInitialMessages(roomId);
+          const roomData = joinResult?.room;
+          if (!roomData || !Array.isArray(joinResult?.messages)) {
+            throw new Error('채팅방 초기 데이터가 올바르지 않습니다.');
           }
+
+          // Ensure current user is included in participants for display
+          if (currentUser && roomData.participants) {
+            const isUserInParticipants = roomData.participants.some(
+              (p) => p._id === currentUser.id || p.id === currentUser.id
+            );
+
+            if (!isUserInParticipants) {
+              roomData.participants = [
+                ...roomData.participants,
+                {
+                  _id: currentUser.id,
+                  id: currentUser.id,
+                  name: currentUser.name,
+                  email: currentUser.email,
+                },
+              ];
+            }
+          }
+
+          processMessages(joinResult.messages, joinResult.hasMore, true);
+          setupSucceeded(roomData);
         }
 
         if (mountedRef.current) {
           setupCompleteRef.current = true;
-          setupSucceeded(roomData);
         }
       } catch (error) {
         if (mountedRef.current) {
@@ -411,9 +350,7 @@ export const useRoomHandling = ({
     attachSocket,
     mountedRef,
     setupSocket,
-    fetchRoomData,
     joinRoom,
-    loadInitialMessages,
     processMessages,
     cleanup,
     setupEventListeners,
@@ -443,7 +380,7 @@ export const useRoomHandling = ({
         socketRef.current = null;
       }
     };
-  }, []);
+  }, [initializingRef, setupCompleteRef, socketRef]);
 
   return {
     setupRoom,

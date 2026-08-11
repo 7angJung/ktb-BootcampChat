@@ -2,12 +2,14 @@ package com.ktb.chatapp.websocket.socketio.handler;
 
 import com.ktb.chatapp.dto.FetchMessagesRequest;
 import com.ktb.chatapp.dto.FetchMessagesResponse;
+import com.ktb.chatapp.model.File;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.FileRepository;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
+import com.ktb.chatapp.service.ReadStatusUpdate;
 import net.datafaker.Faker;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +24,7 @@ import org.springframework.data.domain.*;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -60,6 +63,7 @@ class MessageLoaderTest {
         messageLoader = new MessageLoader(
                 messageRepository,
                 userRepository,
+                fileRepository,
                 new MessageResponseMapper(fileRepository),
                 messageReadStatusService
         );
@@ -81,7 +85,8 @@ class MessageLoaderTest {
         
         lenient().when(userRepository.findAllById(anySet()))
                 .thenReturn(List.of(testUser));
-        lenient().doNothing().when(messageReadStatusService).updateReadStatus(anyList(), anyString());
+        lenient().when(messageReadStatusService.updateReadStatus(anyString(), anyList(), anyString()))
+                .thenReturn(ReadStatusUpdate.empty());
     }
     
     private Message createMessage(String id, LocalDateTime timestamp) {
@@ -119,6 +124,8 @@ class MessageLoaderTest {
         // 시간순 정렬 확인 (오름차순: 오래된 것 → 최신 것)
         // [50시간 전, 49시간 전, ..., 21시간 전]
         verifyAscending(result);
+        verify(userRepository, times(1)).findAllById(Set.of(userId));
+        verify(userRepository, never()).findById(anyString());
     }
     
     private static @NotNull Page<Message> getMessagePage(List<Message> first30Messages) {
@@ -175,5 +182,67 @@ class MessageLoaderTest {
         
         assertThat(result.getMessages()).isEmpty();
         assertThat(result.isHasMore()).isFalse();
+    }
+
+    @Test
+    @DisplayName("loadMessages: 발신자와 파일을 각각 한 번에 조회")
+    void loadMessages_shouldBatchUsersAndFiles() {
+        String secondUserId = faker.internet().uuid();
+        String firstFileId = faker.internet().uuid();
+        String secondFileId = faker.internet().uuid();
+        User firstUser = User.builder().id(userId).name("first").email("first@test.com").build();
+        User secondUser = User.builder().id(secondUserId).name("second").email("second@test.com").build();
+        File firstFile = File.builder().id(firstFileId).filename("first.png").originalname("first.png")
+                .mimetype("image/png").size(10).build();
+        File secondFile = File.builder().id(secondFileId).filename("second.png").originalname("second.png")
+                .mimetype("image/png").size(20).build();
+
+        Message first = createMessage(faker.internet().uuid(), LocalDateTime.now().minusMinutes(2));
+        first.setFileId(firstFileId);
+        Message second = createMessage(faker.internet().uuid(), LocalDateTime.now().minusMinutes(1));
+        second.setSenderId(secondUserId);
+        second.setFileId(secondFileId);
+        Page<Message> page = new PageImpl<>(List.of(second, first), PageRequest.of(0, 30), 2);
+
+        when(messageRepository.findByRoomIdAndTimestampBefore(eq(roomId), any(), any()))
+                .thenReturn(page);
+        when(userRepository.findAllById(Set.of(userId, secondUserId)))
+                .thenReturn(List.of(firstUser, secondUser));
+        when(fileRepository.findAllById(Set.of(firstFileId, secondFileId)))
+                .thenReturn(List.of(firstFile, secondFile));
+
+        FetchMessagesResponse result = messageLoader.loadMessages(
+                new FetchMessagesRequest(roomId, 30, null), userId);
+
+        assertThat(result.getMessages()).hasSize(2);
+        assertThat(result.getMessages()).allSatisfy(message -> assertThat(message.getFile()).isNotNull());
+        verify(userRepository, times(1)).findAllById(Set.of(userId, secondUserId));
+        verify(fileRepository, times(1)).findAllById(Set.of(firstFileId, secondFileId));
+        verify(fileRepository, never()).findById(anyString());
+    }
+
+    @Test
+    @DisplayName("loadMessages: sender와 file이 없거나 삭제되어도 응답 생성")
+    void loadMessages_shouldHandleMissingRelations() {
+        Message systemMessage = createMessage(faker.internet().uuid(), LocalDateTime.now().minusMinutes(2));
+        systemMessage.setSenderId(null);
+        Message deletedRelations = createMessage(faker.internet().uuid(), LocalDateTime.now().minusMinutes(1));
+        deletedRelations.setSenderId("deleted-user");
+        deletedRelations.setFileId("deleted-file");
+        Page<Message> page = new PageImpl<>(List.of(deletedRelations, systemMessage), PageRequest.of(0, 30), 2);
+
+        when(messageRepository.findByRoomIdAndTimestampBefore(eq(roomId), any(), any()))
+                .thenReturn(page);
+        when(userRepository.findAllById(Set.of("deleted-user"))).thenReturn(List.of());
+        when(fileRepository.findAllById(Set.of("deleted-file"))).thenReturn(List.of());
+
+        FetchMessagesResponse result = messageLoader.loadMessages(
+                new FetchMessagesRequest(roomId, 30, null), userId);
+
+        assertThat(result.getMessages()).hasSize(2);
+        assertThat(result.getMessages()).allSatisfy(message -> {
+            assertThat(message.getSender()).isNull();
+            assertThat(message.getFile()).isNull();
+        });
     }
 }

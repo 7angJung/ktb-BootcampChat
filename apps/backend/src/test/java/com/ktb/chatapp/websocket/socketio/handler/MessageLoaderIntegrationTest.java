@@ -11,6 +11,7 @@ import com.ktb.chatapp.repository.FileRepository;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
+import com.ktb.chatapp.service.ReadStatusUpdate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.IntStream;
@@ -22,13 +23,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doReturn;
 
 @SpringBootTest
 @Import({MongoTestContainer.class, RedisTestContainer.class})
@@ -46,6 +48,9 @@ class MessageLoaderIntegrationTest {
 
     @Autowired
     private FileRepository fileRepository;
+
+    @Autowired
+    private MongoTemplate mongoTemplate;
 
     @MockitoSpyBean
     private MessageReadStatusService messageReadStatusService;
@@ -67,6 +72,7 @@ class MessageLoaderIntegrationTest {
         messageLoader = new MessageLoader(
                 messageRepository,
                 userRepository,
+                fileRepository,
                 new MessageResponseMapper(fileRepository),
                 messageReadStatusService
         );
@@ -80,7 +86,8 @@ class MessageLoaderIntegrationTest {
         userRepository.save(testUser);
 
         // MessageReadStatusService mock 설정
-        doNothing().when(messageReadStatusService).updateReadStatus(anyList(), anyString());
+        doReturn(ReadStatusUpdate.empty()).when(messageReadStatusService)
+                .updateReadStatus(anyString(), anyList(), anyString());
     }
 
     @AfterEach
@@ -179,6 +186,16 @@ class MessageLoaderIntegrationTest {
         // Then: 빈 결과 반환
         assertThat(response.getMessages()).isEmpty();
         assertThat(response.isHasMore()).isFalse();
+    }
+
+    @Test
+    @DisplayName("messages 컬렉션에 room-timestamp 복합 인덱스 생성")
+    void messages_shouldHaveRoomTimestampIndex() {
+        assertThat(mongoTemplate.indexOps(Message.class).getIndexInfo())
+                .anySatisfy(index -> {
+                    assertThat(index.getName()).isEqualTo("room_timestamp_desc");
+                    assertThat(index.getIndexFields()).hasSize(2);
+                });
     }
 
     /**
