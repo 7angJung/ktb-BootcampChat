@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
@@ -48,6 +49,9 @@ class MessageLoaderIntegrationTest {
     @Autowired
     private FileRepository fileRepository;
 
+    @Autowired
+    private MongoTemplate mongoTemplate;
+
     @MockitoSpyBean
     private MessageReadStatusService messageReadStatusService;
 
@@ -68,6 +72,7 @@ class MessageLoaderIntegrationTest {
         messageLoader = new MessageLoader(
                 messageRepository,
                 userRepository,
+                fileRepository,
                 new MessageResponseMapper(fileRepository),
                 messageReadStatusService
         );
@@ -181,6 +186,16 @@ class MessageLoaderIntegrationTest {
         // Then: 빈 결과 반환
         assertThat(response.getMessages()).isEmpty();
         assertThat(response.isHasMore()).isFalse();
+    }
+
+    @Test
+    @DisplayName("messages 컬렉션에 room-timestamp 복합 인덱스 생성")
+    void messages_shouldHaveRoomTimestampIndex() {
+        assertThat(mongoTemplate.indexOps(Message.class).getIndexInfo())
+                .anySatisfy(index -> {
+                    assertThat(index.getName()).isEqualTo("room_timestamp_desc");
+                    assertThat(index.getIndexFields()).hasSize(2);
+                });
     }
 
     /**
