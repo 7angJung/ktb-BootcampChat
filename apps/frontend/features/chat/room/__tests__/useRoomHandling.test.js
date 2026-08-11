@@ -1,6 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import api from '@/lib/api/client';
 import socketClient from '@/lib/socket/socketClient';
 import { Toast } from '@/components/Toast';
 import { useRoomHandling } from '../useRoomHandling';
@@ -23,13 +22,6 @@ vi.mock('@/contexts/AuthContext', () => ({
     refreshToken: authMocks.refreshToken,
     logout: authMocks.logout,
   }),
-}));
-
-vi.mock('@/lib/api/client', () => ({
-  default: {
-    get: vi.fn(),
-  },
-  getAuthHeaders: vi.fn(() => ({ Authorization: 'Bearer token-1' })),
 }));
 
 vi.mock('@/lib/socket/socketClient', () => ({
@@ -197,19 +189,14 @@ const createStableSetupHarness = () => {
 describe('useRoomHandling', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    api.get.mockResolvedValue({
-      data: {
-        success: true,
-        data: {
-          _id: 'room-1',
-          name: 'Room 1',
-          participants: [],
-        },
-      },
-    });
     socketClient.connect.mockResolvedValue(createSocket());
     socketClient.joinRoomAndWait.mockResolvedValue({
       roomId: 'room-1',
+      room: {
+        _id: 'room-1',
+        name: 'Room 1',
+        participants: [],
+      },
       messages: [{ _id: 'join-message-1', timestamp: '2026-07-07T00:00:00.000Z' }],
       hasMore: false,
     });
@@ -247,7 +234,6 @@ describe('useRoomHandling', () => {
     });
 
     expect(socketClient.connect).toHaveBeenCalledTimes(1);
-    expect(api.get).toHaveBeenCalledWith('/api/rooms/room-1', expect.any(Object));
     expect(socketClient.subscribeRoomEvents).toHaveBeenCalledWith(
       harness.socketRef.current,
       expect.objectContaining({
@@ -274,42 +260,36 @@ describe('useRoomHandling', () => {
     expect(harness.setupCompleteRef.current).toBe(true);
   });
 
-  it('falls back to fetching previous messages when join response has no messages', async () => {
+  it('rejects an incomplete join response without issuing another initial fetch', async () => {
     socketClient.joinRoomAndWait.mockResolvedValueOnce({ roomId: 'room-1' });
-    const harness = createHarness();
-
-    await act(async () => {
-      await harness.result.current.setupRoom();
-    });
-
-    expect(socketClient.fetchPreviousMessagesAndWait).toHaveBeenCalledWith(
-      { roomId: 'room-1', limit: 30 },
-      harness.socketRef.current,
-      expect.objectContaining({ timeoutMs: 5000 }),
-    );
-  });
-
-  it('records setup failure through semantic reducer actions', async () => {
-    api.get.mockResolvedValueOnce({
-      data: {
-        success: false,
-      },
-    });
     const harness = createHarness();
 
     await expect(
       act(async () => {
         await harness.result.current.setupRoom();
       })
-    ).rejects.toThrow('채팅방 데이터가 올바르지 않습니다.');
+    ).rejects.toThrow('채팅방 초기 데이터가 올바르지 않습니다.');
+
+    expect(socketClient.fetchPreviousMessagesAndWait).not.toHaveBeenCalled();
+  });
+
+  it('records setup failure through semantic reducer actions', async () => {
+    socketClient.joinRoomAndWait.mockResolvedValueOnce({ roomId: 'room-1' });
+    const harness = createHarness();
+
+    await expect(
+      act(async () => {
+        await harness.result.current.setupRoom();
+      })
+    ).rejects.toThrow('채팅방 초기 데이터가 올바르지 않습니다.');
 
     expect(harness.actions.setupStarted).toHaveBeenCalledTimes(1);
     expect(harness.actions.setupFailed).toHaveBeenCalledWith(
-      '채팅방 데이터가 올바르지 않습니다.',
+      '채팅방 초기 데이터가 올바르지 않습니다.',
     );
     expect(harness.setters.cleanup).toHaveBeenCalledWith('ERROR');
     expect(harness.setters.setError).not.toHaveBeenCalledWith(
-      '채팅방 데이터가 올바르지 않습니다.',
+      '채팅방 초기 데이터가 올바르지 않습니다.',
     );
   });
 
@@ -326,7 +306,7 @@ describe('useRoomHandling', () => {
       handlers.onMessagesRead({
         userId: 'user-2',
         messageIds: ['message-1'],
-        timestamp: '2026-07-07T00:00:01.000Z',
+        readAt: '2026-07-07T00:00:01.000Z',
       });
       handlers.onMessage({ _id: 'message-2', timestamp: '2026-07-07T00:00:02.000Z' });
       handlers.onPreviousMessagesLoaded({

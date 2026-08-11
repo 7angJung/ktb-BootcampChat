@@ -51,7 +51,7 @@ describe('roomEventHandlers', () => {
       applyReadReceipts(messages, {
         userId: 'user-2',
         messageIds: ['message-1', 'message-2'],
-        timestamp: '2026-07-07T00:00:00.000Z',
+        readAt: '2026-07-07T00:00:00.000Z',
       })
     ).toEqual([
       {
@@ -151,7 +151,7 @@ describe('roomEventHandlers', () => {
     handlers.onMessagesRead({
       userId: 'user-1',
       messageIds: ['message-1'],
-      timestamp: '2026-07-07T00:00:00.000Z',
+      readAt: '2026-07-07T00:00:00.000Z',
     });
     handlers.onMessage({ _id: 'message-1' });
     handlers.onPreviousMessagesLoaded({ messages: [{ _id: 'message-2' }], hasMore: true });

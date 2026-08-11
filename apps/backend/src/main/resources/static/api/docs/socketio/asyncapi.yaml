@@ -585,6 +585,9 @@ components:
       payload:
         type: object
         properties:
+          roomId:
+            type: string
+            description: 읽음 상태가 변경된 채팅방 ID
           userId:
             type: string
             description: 읽은 사용자 ID
@@ -593,9 +596,15 @@ components:
             items:
               type: string
             description: 읽은 메시지 ID 목록
+          readAt:
+            type: string
+            format: date-time
+            description: 서버가 생성한 읽음 처리 시각
         required:
+          - roomId
           - userId
           - messageIds
+          - readAt
 
     MessageReactionUpdateResponse:
       name: MessageReactionUpdate
@@ -814,6 +823,9 @@ components:
           type: string
           description: 메시지 내용
           example: '안녕하세요!'
+        clientMessageId:
+          type: string
+          description: 재시도 중 동일 메시지를 식별하는 클라이언트 생성 ID
         msg:
           type: string
           description: 메시지 내용 (호환성)
@@ -851,13 +863,17 @@ components:
     MarkAsReadRequest:
       type: object
       properties:
+        roomId:
+          type: string
+          description: 채팅방 ID
         messageIds:
           type: array
           items:
             type: string
           description: 읽은 메시지 ID 목록
-      required:
-        - messageIds
+        required:
+          - roomId
+          - messageIds
 
     MessageReactionRequest:
       type: object

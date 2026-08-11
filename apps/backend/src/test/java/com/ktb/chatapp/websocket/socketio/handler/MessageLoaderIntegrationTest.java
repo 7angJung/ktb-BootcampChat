@@ -11,6 +11,7 @@ import com.ktb.chatapp.repository.FileRepository;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
+import com.ktb.chatapp.service.ReadStatusUpdate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.IntStream;
@@ -29,7 +30,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doReturn;
 
 @SpringBootTest
 @Import({MongoTestContainer.class, RedisTestContainer.class})
@@ -85,7 +86,8 @@ class MessageLoaderIntegrationTest {
         userRepository.save(testUser);
 
         // MessageReadStatusService mock 설정
-        doNothing().when(messageReadStatusService).updateReadStatus(anyList(), anyString());
+        doReturn(ReadStatusUpdate.empty()).when(messageReadStatusService)
+                .updateReadStatus(anyString(), anyList(), anyString());
     }
 
     @AfterEach

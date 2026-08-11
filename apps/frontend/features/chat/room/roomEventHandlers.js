@@ -34,9 +34,11 @@ export const processLoadedRoomMessages = ({
   return nextMessages;
 };
 
-export const applyReadReceipts = (messages, { userId, messageIds, timestamp }) =>
-  messages.map(msg => {
-    if (!messageIds.includes(msg._id)) {
+export const applyReadReceipts = (messages, { userId, messageIds, readAt }) => {
+  const messageIdSet = new Set(messageIds || []);
+
+  return messages.map(msg => {
+    if (!messageIdSet.has(msg._id)) {
       return msg;
     }
 
@@ -49,9 +51,10 @@ export const applyReadReceipts = (messages, { userId, messageIds, timestamp }) =
 
     return {
       ...msg,
-      readers: [...(msg.readers || []), { userId, readAt: timestamp || new Date() }],
+      readers: [...(msg.readers || []), { userId, readAt }],
     };
   });
+};
 
 export const appendIncomingMessage = (messages, incoming) => {
   if (!incoming?._id) {
