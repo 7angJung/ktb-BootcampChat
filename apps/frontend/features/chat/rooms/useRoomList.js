@@ -2,6 +2,14 @@ import { useState, useCallback, useRef } from 'react';
 import axiosInstance from '@/services/axios';
 import { CONNECTION_STATUS } from './useServerConnection';
 
+const ROOM_PAGE_SIZE = 20;
+
+const mergeRoomsById = (currentRooms, nextRooms) => {
+  const roomsById = new Map(currentRooms.map((room) => [room._id, room]));
+  nextRooms.forEach((room) => roomsById.set(room._id, room));
+  return Array.from(roomsById.values());
+};
+
 export const useRoomList = ({
   currentUser,
   router,
@@ -16,6 +24,9 @@ export const useRoomList = ({
   const [refreshing, setRefreshing] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [joiningRoom, setJoiningRoom] = useState(false);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const isLoadingRef = useRef(false);
 
@@ -56,16 +67,22 @@ export const useRoomList = ({
     setConnectionStatus(CONNECTION_STATUS.ERROR);
   }, [isRetrying, setConnectionStatus]);
 
-  const loadRooms = useCallback(async () => {
+  const loadRooms = useCallback(async ({ targetPage = 0, append = false } = {}) => {
     await attemptConnection();
 
-    const response = await axiosInstance.get('/api/rooms');
+    const response = await axiosInstance.get('/api/rooms', {
+      params: { page: targetPage, size: ROOM_PAGE_SIZE },
+    });
 
     if (!response?.data?.data) {
       throw new Error('INVALID_RESPONSE');
     }
 
-    setRooms(response.data.data);
+    setRooms((currentRooms) => append
+      ? mergeRoomsById(currentRooms, response.data.data)
+      : response.data.data);
+    setPage(response.data.metadata?.page ?? targetPage);
+    setHasMore(Boolean(response.data.metadata?.hasMore));
   }, [attemptConnection]);
 
   const fetchRooms = useCallback(async () => {
@@ -79,7 +96,7 @@ export const useRoomList = ({
       setLoading(true);
       setError(null);
 
-      await loadRooms();
+      await loadRooms({ targetPage: 0 });
 
       if (isInitialLoad) {
         setIsInitialLoad(false);
@@ -105,7 +122,7 @@ export const useRoomList = ({
       isLoadingRef.current = true;
       setRefreshing(true);
 
-      await loadRooms();
+      await loadRooms({ targetPage: 0 });
       setError(null);
 
       return true;
@@ -125,6 +142,30 @@ export const useRoomList = ({
       isLoadingRef.current = false;
     }
   }, [currentUser, loadRooms]);
+
+  const loadMoreRooms = useCallback(async () => {
+    if (!currentUser?.token || isLoadingRef.current || loadingMore || !hasMore) {
+      return false;
+    }
+
+    try {
+      isLoadingRef.current = true;
+      setLoadingMore(true);
+      await loadRooms({ targetPage: page + 1, append: true });
+      return true;
+    } catch (error) {
+      setError({
+        title: '채팅방 추가 로드 실패',
+        message: '다음 채팅방 목록을 불러오지 못했습니다.',
+        type: 'warning',
+        showRetry: false,
+      });
+      return false;
+    } finally {
+      setLoadingMore(false);
+      isLoadingRef.current = false;
+    }
+  }, [currentUser, hasMore, loadRooms, loadingMore, page]);
 
   const handleJoinRoom = useCallback(async (roomId) => {
     if (connectionStatus !== CONNECTION_STATUS.CONNECTED) {
@@ -170,8 +211,11 @@ export const useRoomList = ({
     loading,
     refreshing,
     joiningRoom,
+    hasMore,
+    loadingMore,
     fetchRooms,
     refreshRooms,
+    loadMoreRooms,
     handleJoinRoom,
   };
 };

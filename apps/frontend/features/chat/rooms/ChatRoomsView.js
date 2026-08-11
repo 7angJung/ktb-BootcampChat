@@ -46,8 +46,11 @@ export default function ChatRoomsView({ router }) {
     loading,
     refreshing,
     joiningRoom,
+    hasMore,
+    loadingMore,
     fetchRooms,
     refreshRooms,
+    loadMoreRooms,
     handleJoinRoom,
   } = useRoomList({
     currentUser,
@@ -229,11 +232,23 @@ export default function ChatRoomsView({ router }) {
             <LoadingIndicator text="채팅방 목록을 불러오는 중..." />
           </Box>
         ) : rooms.length > 0 ? (
-          <RoomsTable
-            rooms={rooms}
-            connectionStatus={connectionStatus}
-            onJoinRoom={handleJoinRoom}
-          />
+          <VStack $css={{ gap: '$300', width: '100%' }}>
+            <RoomsTable
+              rooms={rooms}
+              connectionStatus={connectionStatus}
+              onJoinRoom={handleJoinRoom}
+            />
+            {hasMore && (
+              <Button
+                variant="outline"
+                onClick={loadMoreRooms}
+                disabled={loadingMore}
+                data-testid="load-more-rooms-button"
+              >
+                {loadingMore ? '불러오는 중' : '더 보기'}
+              </Button>
+            )}
+          </VStack>
         ) : !error && (
           <VStack
             $css={{ gap: '$300', alignItems: 'center', padding: '$400' }}

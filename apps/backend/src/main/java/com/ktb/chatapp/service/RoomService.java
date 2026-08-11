@@ -8,15 +8,18 @@ import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import java.time.LocalDateTime;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -31,24 +34,31 @@ public class RoomService {
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher eventPublisher;
 
-    public RoomsResponse getAllRooms(String name) {
+    public RoomsResponse getAllRooms(int page, int size) {
 
         try {
-            // 전체 방을 조회해 최신순으로 정렬한다
-            List<RoomResponse> roomResponses = roomRepository.findAll().stream()
-                .map(room -> mapToRoomResponse(room, name))
-                .sorted(Comparator.comparing(
-                    RoomResponse::getCreatedAtDateTime,
-                    Comparator.nullsLast(Comparator.reverseOrder())))
-                .collect(Collectors.toList());
+            Sort sort = Sort.by(
+                    Sort.Order.desc("createdAt"),
+                    Sort.Order.desc("_id"));
+            Page<Room> roomPage = roomRepository.findAll(PageRequest.of(page, size, sort));
+            List<String> roomIds = roomPage.getContent().stream().map(Room::getId).toList();
+            Map<String, Integer> recentCounts = recentMessageCounter.countRecentMessages(roomIds);
+
+            List<RoomListResponse> roomResponses = roomPage.getContent().stream()
+                .map(room -> mapToRoomListResponse(room, recentCounts.getOrDefault(room.getId(), 0)))
+                .toList();
 
             PageMetadata metadata = PageMetadata.builder()
-                .total(roomResponses.size())
-                .page(0)
-                .pageSize(roomResponses.size())
-                .totalPages(1)
-                .hasMore(false)
+                .total(roomPage.getTotalElements())
+                .page(roomPage.getNumber())
+                .pageSize(roomPage.getSize())
+                .totalPages(roomPage.getTotalPages())
+                .hasMore(roomPage.hasNext())
                 .currentCount(roomResponses.size())
+                .sort(PageMetadata.SortInfo.builder()
+                    .field("createdAt")
+                    .order("DESC")
+                    .build())
                 .build();
 
             return RoomsResponse.builder()
@@ -64,6 +74,17 @@ public class RoomService {
                 .data(List.of())
                 .build();
         }
+    }
+
+    private RoomListResponse mapToRoomListResponse(Room room, int recentMessageCount) {
+        return RoomListResponse.builder()
+                .id(room.getId())
+                .name(room.getName() != null ? room.getName() : "제목 없음")
+                .hasPassword(room.isHasPassword())
+                .participantsCount(room.getParticipantCount())
+                .recentMessageCount(recentMessageCount)
+                .createdAtDateTime(room.getCreatedAt())
+                .build();
     }
 
     public HealthResponse getHealthStatus() {
@@ -178,7 +199,7 @@ public class RoomService {
         return room;
     }
 
-    private RoomResponse mapToRoomResponse(Room room, String name) {
+    public RoomResponse mapToRoomResponse(Room room, String name) {
         if (room == null) return null;
 
         User creator = null;
@@ -212,7 +233,7 @@ public class RoomService {
                     .build())
                 .collect(Collectors.toList()))
             .createdAtDateTime(room.getCreatedAt())
-            .isCreator(creator != null && creator.getId().equals(name))
+            .isCreator(creator != null && Objects.equals(creator.getEmail(), name))
             .recentMessageCount(recentMessageCount)
             .build();
     }

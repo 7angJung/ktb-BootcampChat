@@ -48,14 +48,17 @@ export const useRoomsSocket = ({
             setConnectionStatus(CONNECTION_STATUS.ERROR);
           },
           roomCreated: (newRoom) => {
-            setRooms((prev) => [newRoom, ...prev]);
+            setRooms((prev) => [
+              newRoom,
+              ...prev.filter((room) => room._id !== newRoom._id),
+            ]);
           },
           roomUpdated: (updatedRoom) => {
-            setRooms((prev) =>
-              prev.map((room) =>
-                room._id === updatedRoom._id ? updatedRoom : room
-              )
-            );
+            setRooms((prev) => prev.map((room) =>
+              room._id === updatedRoom._id
+                ? { ...room, ...updatedRoom }
+                : room
+            ));
           },
           // 활성도 지표만 담긴 경량 payload이므로 방 정보를 덮지 않고 병합한다
           roomActivity: (activity) => {
