@@ -2,6 +2,7 @@ import { deriveUniqueSortedMessages } from '../messages/useMessageList';
 import {
   normalizeDeliveredMessages,
   rejectPendingMessage,
+  removePendingMessage,
   settleDeliveredMessage,
 } from '../messages/messageDelivery';
 
@@ -146,10 +147,9 @@ export const createRoomEventHandlers = ({
       console.error('Socket error:', error);
       if (error?.code === 'MESSAGE_REJECTED') {
         if (error.clientMessageId) {
-          setMessages(prev => rejectPendingMessage(
+          setMessages(prev => removePendingMessage(
             prev,
             error.clientMessageId,
-            error.message,
           ));
         }
         showRejectedMessage(error.message || '금칙어가 포함되어 메시지를 전송할 수 없습니다.');

@@ -76,6 +76,17 @@ export const rejectPendingMessage = (messages, clientMessageId, reason) => {
   return changed ? next : messages;
 };
 
+export const removePendingMessage = (messages, clientMessageId) => {
+  if (!clientMessageId) return messages;
+
+  const next = messages.filter(message => (
+    message.clientMessageId !== clientMessageId
+    || message.deliveryStatus === DELIVERY_STATUS.SENT
+  ));
+
+  return next.length === messages.length ? messages : next;
+};
+
 export const normalizeDeliveredMessages = messages => (
   messages.map(message => ({
     ...message,
