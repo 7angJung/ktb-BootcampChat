@@ -103,23 +103,23 @@ public class ChatMessageHandler {
         }
         
         try {
-            User sender = userRepository.findById(socketUser.id()).orElse(null);
-            if (sender == null) {
-                recordError("user_not_found");
-                sendMessageError(client, data, "MESSAGE_ERROR", "User not found", Map.of());
-                timerSample.stop(createTimer("error", "user_not_found"));
-                return;
-            }
-
             String roomId = data.getRoom();
-            Room room = roomRepository.findById(roomId).orElse(null);
-            if (room == null || !room.getParticipantIds().contains(socketUser.id())) {
+            boolean hasRoomAccess = roomRepository
+                    .existsByIdAndParticipantIdsContaining(roomId, socketUser.id());
+            if (!hasRoomAccess) {
+                hasRoomAccess = roomRepository.findById(roomId)
+                        .map(Room::getParticipantIds)
+                        .map(participantIds -> participantIds.contains(socketUser.id()))
+                        .orElse(false);
+            }
+            if (!hasRoomAccess) {
                 recordError("room_access_denied");
                 sendMessageError(client, data, "MESSAGE_ERROR",
                         "채팅방 접근 권한이 없습니다.", Map.of());
                 timerSample.stop(createTimer("error", "room_access_denied"));
                 return;
             }
+            UserResponse senderResponse = resolveSender(socketUser);
 
             MessageContent messageContent = data.getParsedContent();
 
@@ -167,7 +167,7 @@ public class ChatMessageHandler {
                         .findBySenderIdAndClientMessageId(socketUser.id(), data.getClientMessageId())
                         .orElseThrow(() -> duplicateKeyException);
             }
-            MessageResponse messageResponse = createMessageResponse(savedMessage, sender);
+            MessageResponse messageResponse = createMessageResponse(savedMessage, senderResponse);
 
             socketIOServer.getRoomOperations(roomId)
                     .sendEvent(MESSAGE, messageResponse);
@@ -257,7 +257,7 @@ public class ChatMessageHandler {
         return message;
     }
 
-    private MessageResponse createMessageResponse(Message message, User sender) {
+    private MessageResponse createMessageResponse(Message message, UserResponse sender) {
         var messageResponse = new MessageResponse();
         messageResponse.setId(message.getId());
         messageResponse.setRoomId(message.getRoomId());
@@ -266,7 +266,7 @@ public class ChatMessageHandler {
         messageResponse.setType(message.getType());
         messageResponse.setTimestamp(message.toTimestampMillis());
         messageResponse.setReactions(message.getReactions() != null ? message.getReactions() : Collections.emptyMap());
-        messageResponse.setSender(UserResponse.from(sender));
+        messageResponse.setSender(sender);
         messageResponse.setMetadata(message.getMetadata());
 
         if (message.getFileId() != null) {
@@ -275,6 +275,24 @@ public class ChatMessageHandler {
         }
 
         return messageResponse;
+    }
+
+    private UserResponse resolveSender(SocketUser sender) {
+        if (sender.email() != null) {
+            return createSocketUserResponse(sender);
+        }
+        return userRepository.findById(sender.id())
+                .map(UserResponse::from)
+                .orElseGet(() -> createSocketUserResponse(sender));
+    }
+
+    private UserResponse createSocketUserResponse(SocketUser sender) {
+        return UserResponse.builder()
+                .id(sender.id())
+                .name(sender.name())
+                .email(sender.email())
+                .profileImage(sender.profileImage())
+                .build();
     }
 
     // Metrics helper methods

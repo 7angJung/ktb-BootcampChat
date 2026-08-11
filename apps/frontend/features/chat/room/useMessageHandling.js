@@ -5,6 +5,7 @@ import { useChatFileUpload } from '../files/useChatFileUpload';
 import {
   createPendingMessage,
   rejectPendingMessage,
+  removePendingMessage,
   settleDeliveredMessage,
 } from '../messages/messageDelivery';
 
@@ -152,10 +153,10 @@ export const useMessageHandling = (
 
    } catch (error) {
      if (pendingCreated) {
-       setMessages(prev => rejectPendingMessage(
-         prev,
-         clientMessageId,
-         error?.message,
+       setMessages(prev => (
+         error?.code === 'MESSAGE_REJECTED'
+           ? removePendingMessage(prev, clientMessageId)
+           : rejectPendingMessage(prev, clientMessageId, error?.message)
        ));
      }
      if (error.message?.includes('세션') ||

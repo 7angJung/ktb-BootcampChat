@@ -257,7 +257,6 @@ class LoadTester {
           // Mark message as read
           if (data._id) {
             socket.emit(CLIENT_EMIT.MARK_MESSAGES_AS_READ, {
-              roomId,
               messageIds: [data._id]
             });
             this.metrics.messagesRead++;
@@ -331,7 +330,6 @@ class LoadTester {
         socket.emit(CLIENT_EMIT.CHAT_MESSAGE, {
           room: roomId,
           type: 'text',
-          clientMessageId: `${userId}-${i + 1}-${Date.now()}`,
           content: `Load test message ${i + 1}/${messageCount} from user ${userId} at ${new Date().toISOString()}`
         });
 
