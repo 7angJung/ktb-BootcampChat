@@ -1,4 +1,4 @@
-// S3 프로필 스토리지의 key 제한과 기본 입출력을 검증한다.
+// S3 스토리지의 key 제한과 기본 입출력을 검증한다.
 package com.ktb.chatapp.storage;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -31,6 +31,7 @@ class S3ProfileStorageTest {
 
     private static final String BUCKET = "profile-bucket";
     private static final String PROFILE_KEY = "profiles/avatar.png";
+    private static final String CHAT_KEY = "chat/file.png";
 
     @Mock
     private S3Client s3Client;
@@ -94,10 +95,24 @@ class S3ProfileStorageTest {
     }
 
     @Test
-    void put_rejectsChatKey() {
+    void put_acceptsChatKey() {
+        storage.put(
+                new ByteArrayInputStream(new byte[] {1}),
+                CHAT_KEY,
+                "image/png",
+                1L);
+
+        ArgumentCaptor<PutObjectRequest> requestCaptor = ArgumentCaptor.forClass(PutObjectRequest.class);
+        verify(s3Client).putObject(requestCaptor.capture(), any(RequestBody.class));
+
+        assertThat(requestCaptor.getValue().key()).isEqualTo(CHAT_KEY);
+    }
+
+    @Test
+    void put_rejectsUnknownKey() {
         assertThatThrownBy(() -> storage.put(
                 new ByteArrayInputStream(new byte[] {1}),
-                "chat/file.png",
+                "other/file.png",
                 "image/png",
                 1L))
                 .isInstanceOf(IllegalArgumentException.class);

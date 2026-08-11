@@ -1,4 +1,4 @@
-// key prefix에 따라 프로필 이미지는 S3로, 채팅 파일은 로컬로 보낸다.
+// S3 모드에서는 프로필 이미지와 채팅 파일을 S3로 보내고 기존 로컬 파일 조회를 지원한다.
 package com.ktb.chatapp.storage;
 
 import java.io.InputStream;
@@ -39,7 +39,7 @@ public class RoutingStorage implements StoragePort {
             throw new IllegalStateException("FILE_STORAGE_TYPE은 local 또는 s3만 지원합니다.");
         }
         if (normalizedType.equals("s3") && profileStorage == null) {
-            throw new IllegalStateException("FILE_STORAGE_TYPE=s3인데 S3 프로필 스토리지가 등록되지 않았습니다.");
+            throw new IllegalStateException("FILE_STORAGE_TYPE=s3인데 S3 스토리지가 등록되지 않았습니다.");
         }
         this.profileStorage = normalizedType.equals("s3") ? profileStorage : null;
     }
@@ -51,18 +51,18 @@ public class RoutingStorage implements StoragePort {
 
     @Override
     public Optional<Resource> open(String key) {
-        if (!StorageKey.isProfile(key) || profileStorage == null) {
+        if (!isS3Key(key) || profileStorage == null) {
             return localStorage.open(key);
         }
 
-        // 배포 전 로컬에 남아 있는 기존 프로필 이미지는 이동 없이 계속 읽을 수 있게 한다.
+        // 배포 전 로컬에 남아 있는 기존 파일은 이동 없이 계속 읽을 수 있게 한다.
         Optional<Resource> s3Resource = profileStorage.open(key);
         return s3Resource.isPresent() ? s3Resource : localStorage.open(key);
     }
 
     @Override
     public void delete(String key) {
-        if (!StorageKey.isProfile(key) || profileStorage == null) {
+        if (!isS3Key(key) || profileStorage == null) {
             localStorage.delete(key);
             return;
         }
@@ -81,6 +81,10 @@ public class RoutingStorage implements StoragePort {
     }
 
     private StoragePort delegateFor(String key) {
-        return StorageKey.isProfile(key) && profileStorage != null ? profileStorage : localStorage;
+        return isS3Key(key) && profileStorage != null ? profileStorage : localStorage;
+    }
+
+    private boolean isS3Key(String key) {
+        return StorageKey.isProfile(key) || StorageKey.isChat(key);
     }
 }
