@@ -1,4 +1,4 @@
-// 프로필·채팅 key가 서로 다른 저장소로 라우팅되는지 검증한다.
+// S3 모드에서 프로필·채팅 key가 S3로 라우팅되는지 검증한다.
 package com.ktb.chatapp.storage;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,15 +40,15 @@ class RoutingStorageTest {
     }
 
     @Test
-    void s3Mode_routesProfileToS3AndChatToLocal() {
+    void s3Mode_routesProfileAndChatToS3() {
         RoutingStorage routingStorage = new RoutingStorage(localStorage, profileStorage, "s3");
 
         routingStorage.put(content("profile"), "profiles/avatar.png", "image/png", 7L);
         routingStorage.put(content("chat"), "chat/file.png", "image/png", 4L);
 
         verify(profileStorage).put(any(), eq("profiles/avatar.png"), eq("image/png"), eq(7L));
-        verify(profileStorage, never()).put(any(), eq("chat/file.png"), any(), anyLong());
-        assertThat(uploadDir.resolve("chat/file.png")).exists();
+        verify(profileStorage).put(any(), eq("chat/file.png"), eq("image/png"), eq(4L));
+        assertThat(uploadDir.resolve("chat/file.png")).doesNotExist();
     }
 
     @Test
