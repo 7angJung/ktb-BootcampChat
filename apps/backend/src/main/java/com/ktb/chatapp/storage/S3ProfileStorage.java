@@ -2,12 +2,15 @@
 package com.ktb.chatapp.storage;
 
 import java.io.InputStream;
+import java.net.URI;
+import java.time.Duration;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import software.amazon.awssdk.core.ResponseBytes;
@@ -16,28 +19,73 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 
 @Component
 @ConditionalOnProperty(name = "file.storage.type", havingValue = "s3")
 public class S3ProfileStorage implements StoragePort {
 
     private final S3Client s3Client;
+    private final S3Presigner s3Presigner;
     private final String bucket;
 
     @Autowired
     public S3ProfileStorage(
             S3Client s3Client,
+            S3Presigner s3Presigner,
             @Value("${s3.bucket:}") String bucket) {
-        this(s3Client, bucket, true);
+        this(s3Client, s3Presigner, bucket, true);
     }
 
     S3ProfileStorage(S3Client s3Client, String bucket, boolean validateBucket) {
+        this(s3Client, null, bucket, validateBucket);
+    }
+
+    private S3ProfileStorage(
+            S3Client s3Client,
+            S3Presigner s3Presigner,
+            String bucket,
+            boolean validateBucket) {
         this.s3Client = s3Client;
+        this.s3Presigner = s3Presigner;
         this.bucket = bucket == null ? "" : bucket.trim();
         if (validateBucket && !StringUtils.hasText(this.bucket)) {
             throw new IllegalStateException("S3_BUCKET은 FILE_STORAGE_TYPE=s3일 때 필수입니다.");
+        }
+    }
+
+    @Override
+    public Optional<URI> offloadUrl(String key, Duration ttl, ContentDisposition disposition) {
+        requireProfileKey(key);
+        if (s3Presigner == null) {
+            return Optional.empty();
+        }
+
+        try {
+            s3Client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key).build());
+            GetObjectRequest request = GetObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .responseContentDisposition(disposition.toString())
+                    .build();
+            String presignedUrl = s3Presigner.presignGetObject(GetObjectPresignRequest.builder()
+                            .signatureDuration(ttl)
+                            .getObjectRequest(request)
+                            .build())
+                    .url()
+                    .toString();
+            return Optional.of(URI.create(presignedUrl));
+        } catch (S3Exception ex) {
+            if (ex.statusCode() == 404) {
+                return Optional.empty();
+            }
+            throw new RuntimeException("S3 프로필 이미지 URL 생성에 실패했습니다.", ex);
+        } catch (RuntimeException ex) {
+            throw new RuntimeException("S3 프로필 이미지 URL 생성에 실패했습니다.", ex);
         }
     }
 

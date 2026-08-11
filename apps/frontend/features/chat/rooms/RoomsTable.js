@@ -2,9 +2,8 @@ import React from 'react';
 import { LockIcon, GroupIcon } from '@vapor-ui/icons';
 import { Button, Text, VStack, HStack } from '@vapor-ui/core';
 import * as Table from '@/components/Table';
-import { CONNECTION_STATUS } from './useServerConnection';
 
-const RoomsTable = ({ rooms, connectionStatus, onJoinRoom }) => {
+const RoomsTable = ({ rooms, joiningRoom, onJoinRoom }) => {
   if (!rooms || rooms.length === 0) return null;
 
   return (
@@ -81,7 +80,7 @@ const RoomsTable = ({ rooms, connectionStatus, onJoinRoom }) => {
                   colorPalette="primary"
                   size="md"
                   onClick={() => onJoinRoom(room._id)}
-                  disabled={connectionStatus !== CONNECTION_STATUS.CONNECTED}
+                  disabled={joiningRoom}
                   data-testid="join-chat-room-button"
                 >
                   입장
