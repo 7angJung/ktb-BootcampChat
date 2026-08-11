@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Configuration;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(name = "file.storage.type", havingValue = "s3")
@@ -16,14 +17,27 @@ public class S3StorageConfiguration {
 
     @Bean(destroyMethod = "close")
     S3Client s3Client(@Value("${aws.region:ap-northeast-2}") String region) {
+        Region awsRegion = regionOf(region);
+
+        return S3Client.builder()
+                .region(awsRegion)
+                .credentialsProvider(DefaultCredentialsProvider.create())
+                .build();
+    }
+
+    @Bean(destroyMethod = "close")
+    S3Presigner s3Presigner(@Value("${aws.region:ap-northeast-2}") String region) {
+        return S3Presigner.builder()
+                .region(regionOf(region))
+                .credentialsProvider(DefaultCredentialsProvider.create())
+                .build();
+    }
+
+    private Region regionOf(String region) {
         String normalizedRegion = Objects.requireNonNull(region, "AWS_REGION은 필수입니다.").trim();
         if (normalizedRegion.isEmpty()) {
             throw new IllegalStateException("AWS_REGION은 비어 있을 수 없습니다.");
         }
-
-        return S3Client.builder()
-                .region(Region.of(normalizedRegion))
-                .credentialsProvider(DefaultCredentialsProvider.create())
-                .build();
+        return Region.of(normalizedRegion);
     }
 }
