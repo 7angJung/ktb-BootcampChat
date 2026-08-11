@@ -1,6 +1,5 @@
 package com.ktb.chatapp.websocket.socketio;
 
-import java.util.HashSet;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -26,11 +25,8 @@ public class UserRooms {
      * @param userId the user ID
      * @return the set of room IDs the user is currently in, or empty set if not in any room
      */
-    @SuppressWarnings("unchecked")
     public Set<String> get(String userId) {
-        return chatDataStore.get(buildKey(userId), Set.class)
-                .map(obj -> (Set<String>) obj)
-                .orElse(new HashSet<>());
+        return chatDataStore.getSet(buildKey(userId));
     }
 
     /**
@@ -40,9 +36,7 @@ public class UserRooms {
      * @param roomId the room ID to add to the user's room set
      */
     public void add(String userId, String roomId) {
-        Set<String> rooms = new HashSet<>(get(userId));
-        rooms.add(roomId);
-        chatDataStore.set(buildKey(userId), rooms);
+        chatDataStore.addToSet(buildKey(userId), roomId);
     }
 
     /**
@@ -52,13 +46,7 @@ public class UserRooms {
      * @param roomId the room ID to remove
      */
     public void remove(String userId, String roomId) {
-        Set<String> rooms = new HashSet<>(get(userId));
-        rooms.remove(roomId);
-        if (rooms.isEmpty()) {
-            chatDataStore.delete(buildKey(userId));
-        } else {
-            chatDataStore.set(buildKey(userId), rooms);
-        }
+        chatDataStore.removeFromSet(buildKey(userId), roomId);
     }
 
     /**
@@ -86,6 +74,6 @@ public class UserRooms {
     }
     
     public void removeAllRooms(String userId) {
-        get(userId).forEach(roomId -> remove(userId, roomId));
+        clear(userId);
     }
 }
