@@ -4,6 +4,7 @@ import com.ktb.chatapp.dto.*;
 import com.ktb.chatapp.event.SessionEndedEvent;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.UserRepository;
+import com.ktb.chatapp.security.AuthenticatedUserPrincipal;
 import com.ktb.chatapp.service.JwtService;
 import com.ktb.chatapp.service.SessionCreationResult;
 import com.ktb.chatapp.service.SessionMetadata;
@@ -20,6 +21,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -164,19 +166,19 @@ public class AuthController {
         
         try {
             // Authenticate user
-            User user = userRepository.findByEmail(loginRequest.getEmail().toLowerCase())
-                    .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+            String normalizedEmail = loginRequest.getEmail().toLowerCase(Locale.ROOT);
             Authentication authentication = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(
-                            user.getEmail(),
+                            normalizedEmail,
                             loginRequest.getPassword()
                     )
             );
 
+            if (!(authentication.getPrincipal() instanceof AuthenticatedUserPrincipal principal)) {
+                throw new IllegalStateException("Unsupported authentication principal");
+            }
+
             SecurityContextHolder.getContext().setAuthentication(authentication);
-            
-            // 단일 세션 정책을 위해 기존 세션 제거
-            sessionService.removeAllUserSessions(user.getId());
 
             // Create new session
             SessionMetadata metadata = new SessionMetadata(
@@ -186,20 +188,20 @@ public class AuthController {
             );
 
             SessionCreationResult sessionInfo =
-                    sessionService.createSession(user.getId(), metadata);
+                    sessionService.createSession(principal.getId(), metadata);
 
             // Generate JWT token
             String token = jwtService.generateToken(
                 sessionInfo.getSessionId(),
-                user.getEmail(),
-                user.getId()
+                principal.getEmail(),
+                principal.getId()
             );
 
             LoginResponse response = LoginResponse.builder()
                     .success(true)
                     .token(token)
                     .sessionId(sessionInfo.getSessionId())
-                    .user(AuthUserDto.from(user))
+                    .user(AuthUserDto.from(principal))
                     .build();
 
             return ResponseEntity.ok()
