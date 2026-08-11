@@ -674,7 +674,6 @@ class RampUpLoadTester {
 
         if (data._id) {
           socket.emit(CLIENT_EMIT.MARK_MESSAGES_AS_READ, {
-            roomId,
             messageIds: [data._id]
           });
           this.metrics.messagesRead++;
@@ -801,7 +800,6 @@ class RampUpLoadTester {
         socket.emit(CLIENT_EMIT.CHAT_MESSAGE, {
           room: roomId,
           type: 'text',
-          clientMessageId: `${userId}-${messageCount + 1}-${Date.now()}`,
           content: `__ts${ts}__ Ramp-up test message from user ${userId}`
         });
 
