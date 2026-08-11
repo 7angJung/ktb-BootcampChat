@@ -3,7 +3,10 @@ package com.ktb.chatapp.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import com.corundumstudio.socketio.store.MemoryStoreFactory;
 import com.corundumstudio.socketio.store.RedissonStoreFactory;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ktb.chatapp.websocket.socketio.RedissonChatDataStore;
 import org.junit.jupiter.api.Test;
+import org.redisson.api.RedissonClient;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class SocketIOConfigUnitTest {
@@ -43,6 +46,14 @@ class SocketIOConfigUnitTest {
     void memoryStoreFactory_isAvailableOnlyForExplicitSingleNodeMode() {
         assertThat(new SocketIOConfig().memoryStoreFactory())
                 .isInstanceOf(MemoryStoreFactory.class);
+    }
+
+    @Test
+    void redissonChatDataStore_reusesTheSocketIoRedissonClient() {
+        RedissonClient redissonClient = org.mockito.Mockito.mock(RedissonClient.class);
+
+        assertThat(new SocketIOConfig().redissonChatDataStore(redissonClient, new ObjectMapper()))
+                .isInstanceOf(RedissonChatDataStore.class);
     }
 
     private SocketIOConfig configuredSocketIOConfig() {
