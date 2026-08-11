@@ -13,6 +13,12 @@ describe('chatRoomReducer', () => {
     expect(chatRoomReducer(initial, { type: 'room/setupStarted' })).toMatchObject({
       loading: true,
       error: null,
+      connectionStatus: 'connecting',
+    });
+
+    expect(chatRoomReducer(initial, { type: 'room/joinStarted' })).toMatchObject({
+      connectionStatus: 'joining',
+      error: null,
     });
 
     expect(
@@ -24,6 +30,7 @@ describe('chatRoomReducer', () => {
       room: { _id: 'room-1', participants: [] },
       isInitialized: true,
       loading: false,
+      connectionStatus: 'ready',
     });
 
     expect(
@@ -34,6 +41,8 @@ describe('chatRoomReducer', () => {
     ).toMatchObject({
       error: '채팅방 연결에 실패했습니다.',
       loading: false,
+      loadingMessages: false,
+      connectionStatus: 'error',
     });
   });
 
@@ -128,7 +137,7 @@ describe('chatRoomReducer', () => {
     const state = {
       ...createInitialChatRoomState(),
       error: 'old error',
-      connectionStatus: 'checking',
+      connectionStatus: 'disconnected',
     };
 
     expect(chatRoomReducer(state, { type: 'connection/established' })).toMatchObject({
@@ -137,6 +146,8 @@ describe('chatRoomReducer', () => {
 
     expect(chatRoomReducer(state, { type: 'connection/lost' })).toMatchObject({
       connectionStatus: 'disconnected',
+      loading: false,
+      loadingMessages: false,
     });
 
     expect(
@@ -169,7 +180,7 @@ describe('useChatRoomState', () => {
       messages: [],
       error: '',
       loading: true,
-      connectionStatus: 'checking',
+      connectionStatus: 'disconnected',
       hasMoreMessages: true,
       loadingMessages: false,
     });

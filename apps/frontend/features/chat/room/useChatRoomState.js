@@ -6,7 +6,7 @@ export const createInitialChatRoomState = () => ({
   currentUser: null,
   error: '',
   loading: true,
-  connectionStatus: 'checking',
+  connectionStatus: 'disconnected',
   messageLoadError: null,
   isInitialized: false,
   hasMoreMessages: true,
@@ -24,6 +24,13 @@ export const chatRoomReducer = (state, action) => {
         ...state,
         loading: true,
         error: null,
+        connectionStatus: 'connecting',
+      };
+    case 'room/joinStarted':
+      return {
+        ...state,
+        error: null,
+        connectionStatus: 'joining',
       };
     case 'room/setupSucceeded':
       return {
@@ -31,12 +38,18 @@ export const chatRoomReducer = (state, action) => {
         room: action.room,
         isInitialized: true,
         loading: false,
+        loadingMessages: false,
+        error: '',
+        connectionStatus: 'ready',
       };
     case 'room/setupFailed':
       return {
         ...state,
         error: action.error,
         loading: false,
+        loadingMessages: false,
+        isInitialized: false,
+        connectionStatus: 'error',
       };
     case 'room/cleanupManual':
       return {
@@ -45,6 +58,8 @@ export const chatRoomReducer = (state, action) => {
         loading: false,
         loadingMessages: false,
         messages: [],
+        isInitialized: false,
+        connectionStatus: 'disconnected',
       };
     case 'room/changed':
       return {
@@ -70,12 +85,16 @@ export const chatRoomReducer = (state, action) => {
       return {
         ...state,
         connectionStatus: 'disconnected',
+        loading: false,
+        loadingMessages: false,
       };
     case 'connection/failed':
       return {
         ...state,
         connectionStatus: 'error',
         error: action.error,
+        loading: false,
+        loadingMessages: false,
       };
     case 'connection/reconnecting':
       return {
@@ -131,6 +150,7 @@ export const useChatRoomState = () => {
 
   const actions = useMemo(() => ({
     setupStarted: () => dispatch({ type: 'room/setupStarted' }),
+    joinStarted: () => dispatch({ type: 'room/joinStarted' }),
     setupSucceeded: room => dispatch({ type: 'room/setupSucceeded', room }),
     setupFailed: error => dispatch({ type: 'room/setupFailed', error }),
     cleanupManual: () => dispatch({ type: 'room/cleanupManual' }),
