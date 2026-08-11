@@ -157,8 +157,9 @@ public class SocketIOConfig {
     @Bean
     @ConditionalOnProperty(name = "socketio.store.type", havingValue = "redisson", matchIfMissing = true)
     public ChatDataStore redissonChatDataStore(
-            @Qualifier("socketIoRedissonClient") RedissonClient redissonClient,
-            ObjectMapper objectMapper) {
+            @Qualifier("socketIoRedissonClient") RedissonClient redissonClient) {
+        ObjectMapper objectMapper = new ObjectMapper();
+        objectMapper.registerModule(new JavaTimeModule());
         return new RedissonChatDataStore(redissonClient, objectMapper);
     }
 

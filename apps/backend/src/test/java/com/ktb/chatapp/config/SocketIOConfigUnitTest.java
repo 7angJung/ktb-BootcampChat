@@ -3,7 +3,6 @@ package com.ktb.chatapp.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import com.corundumstudio.socketio.store.MemoryStoreFactory;
 import com.corundumstudio.socketio.store.RedissonStoreFactory;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ktb.chatapp.websocket.socketio.RedissonChatDataStore;
 import org.junit.jupiter.api.Test;
 import org.redisson.api.RedissonClient;
@@ -52,7 +51,7 @@ class SocketIOConfigUnitTest {
     void redissonChatDataStore_reusesTheSocketIoRedissonClient() {
         RedissonClient redissonClient = org.mockito.Mockito.mock(RedissonClient.class);
 
-        assertThat(new SocketIOConfig().redissonChatDataStore(redissonClient, new ObjectMapper()))
+        assertThat(new SocketIOConfig().redissonChatDataStore(redissonClient))
                 .isInstanceOf(RedissonChatDataStore.class);
     }
 
