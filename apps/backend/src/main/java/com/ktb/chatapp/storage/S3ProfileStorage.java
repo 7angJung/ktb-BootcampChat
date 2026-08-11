@@ -1,4 +1,4 @@
-// 프로필 이미지 key만 Amazon S3에 저장하고 조회한다.
+// 프로필 이미지와 채팅 파일 key를 Amazon S3에 저장하고 조회한다.
 package com.ktb.chatapp.storage;
 
 import java.io.InputStream;
@@ -60,7 +60,7 @@ public class S3ProfileStorage implements StoragePort {
 
     @Override
     public Optional<URI> offloadUrl(String key, Duration ttl, ContentDisposition disposition) {
-        requireProfileKey(key);
+        requireS3Key(key);
         if (s3Presigner == null) {
             return Optional.empty();
         }
@@ -91,7 +91,7 @@ public class S3ProfileStorage implements StoragePort {
 
     @Override
     public StoredObject put(InputStream content, String key, String contentType, long size) {
-        requireProfileKey(key);
+        requireS3Key(key);
 
         PutObjectRequest.Builder requestBuilder = PutObjectRequest.builder()
                 .bucket(bucket)
@@ -111,7 +111,7 @@ public class S3ProfileStorage implements StoragePort {
 
     @Override
     public Optional<Resource> open(String key) {
-        requireProfileKey(key);
+        requireS3Key(key);
 
         try {
             ResponseBytes<GetObjectResponse> response = s3Client.getObjectAsBytes(
@@ -129,7 +129,7 @@ public class S3ProfileStorage implements StoragePort {
 
     @Override
     public void delete(String key) {
-        requireProfileKey(key);
+        requireS3Key(key);
 
         try {
             s3Client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key).build());
@@ -138,9 +138,9 @@ public class S3ProfileStorage implements StoragePort {
         }
     }
 
-    private void requireProfileKey(String key) {
-        if (!StorageKey.isProfile(key)) {
-            throw new IllegalArgumentException("S3 프로필 스토리지는 profiles/ key만 처리합니다.");
+    private void requireS3Key(String key) {
+        if (!StorageKey.isProfile(key) && !StorageKey.isChat(key)) {
+            throw new IllegalArgumentException("S3 스토리지는 profiles/ 또는 chat/ key만 처리합니다.");
         }
     }
 }
