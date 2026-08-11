@@ -48,6 +48,24 @@ class BannedWordCheckerTest {
     }
 
     @Test
+    void containsBannedWord_detectsEveryDictionaryWord() {
+        BannedWordChecker checker = new BannedWordChecker(BANNED_WORDS);
+
+        for (String word : LOADED_WORDS) {
+            assertTrue(
+                    checker.containsBannedWord("prefix-" + word + "-suffix"),
+                    () -> "Failed to detect dictionary word: " + word);
+        }
+    }
+
+    @Test
+    void containsBannedWord_isCaseInsensitive() {
+        BannedWordChecker checker = new BannedWordChecker(Set.of("BlockedWord"));
+
+        assertTrue(checker.containsBannedWord("prefix-BLOCKEDWORD-suffix"));
+    }
+
+    @Test
     void containsBannedWord_returnsFalseForCleanOrEmptyInput() {
         BannedWordChecker checker = new BannedWordChecker(BANNED_WORDS);
         assertFalse(checker.containsBannedWord("safe message without banned tokens"));
