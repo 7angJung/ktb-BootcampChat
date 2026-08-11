@@ -2,6 +2,7 @@ import { useRef, useEffect } from 'react';
 import socketClient from '@/lib/socket/socketClient';
 
 const CONNECTION_STATUS = {
+  CONNECTING: 'connecting',
   CONNECTED: 'connected',
   DISCONNECTED: 'disconnected',
   ERROR: 'error',
@@ -21,6 +22,7 @@ export const useRoomsSocket = ({
 
     const connectSocket = async () => {
       try {
+        setConnectionStatus(CONNECTION_STATUS.CONNECTING);
         const socket = await socketClient
           .connect({
             auth: {
@@ -77,6 +79,12 @@ export const useRoomsSocket = ({
         Object.entries(handlers).forEach(([event, handler]) => {
           socket.on(event, handler);
         });
+
+        setConnectionStatus(
+          socket.connected
+            ? CONNECTION_STATUS.CONNECTED
+            : CONNECTION_STATUS.DISCONNECTED
+        );
       } catch (error) {
         if (!isSubscribed) return;
 
