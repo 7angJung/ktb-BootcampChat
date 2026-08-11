@@ -102,16 +102,18 @@ class ChatMessageHandlerTest {
                         .room("room-1")
                         .type("text")
                         .content("bad word")
+                        .clientMessageId("client-rejected-1")
                         .build();
 
         when(bannedWordChecker.containsBannedWord("bad word")).thenReturn(true);
 
         handler.handleChatMessage(client, request);
 
-        ArgumentCaptor<Map<String, String>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
+        ArgumentCaptor<Map<String, Object>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
         verify(client).sendEvent(eq(ERROR), payloadCaptor.capture());
-        Map<String, String> payload = payloadCaptor.getValue();
+        Map<String, Object> payload = payloadCaptor.getValue();
         org.junit.jupiter.api.Assertions.assertEquals("MESSAGE_REJECTED", payload.get("code"));
+        org.junit.jupiter.api.Assertions.assertEquals("client-rejected-1", payload.get("clientMessageId"));
         verifyNoInteractions(messageRepository);
         verify(socketIOServer, never()).getRoomOperations(any());
     }
