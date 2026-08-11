@@ -29,4 +29,16 @@ describe('ChatRoomInfo', () => {
 
     errorSpy.mockRestore();
   });
+
+  it.each([
+    ['connected', '서버 연결됨'],
+    ['joining', '채팅방 입장 중...'],
+    ['ready', '채팅 가능'],
+    ['connecting', '재접속 중...'],
+    ['disconnected', '연결 끊김'],
+    ['error', '연결 끊김'],
+  ])('shows %s status as %s', (connectionStatus, label) => {
+    render(<ChatRoomInfo connectionStatus={connectionStatus} room={{ participants: [] }} />);
+    expect(screen.getByText(label)).toBeInTheDocument();
+  });
 });

@@ -184,6 +184,7 @@ describe('socketClient', () => {
     expect(socket.listenerCount('joinRoomSuccess')).toBe(0);
     expect(socket.listenerCount('joinRoomError')).toBe(0);
     expect(socket.listenerCount('error')).toBe(0);
+    expect(socket.listenerCount('disconnect')).toBe(0);
     vi.useRealTimers();
   });
 
@@ -200,6 +201,23 @@ describe('socketClient', () => {
     expect(socket.listenerCount('joinRoomSuccess')).toBe(0);
     expect(socket.listenerCount('joinRoomError')).toBe(0);
     expect(socket.listenerCount('error')).toBe(0);
+    expect(socket.listenerCount('disconnect')).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it('rejects joinRoomAndWait immediately when the socket disconnects', async () => {
+    vi.useFakeTimers();
+    const socket = createEventSocket();
+    const client = createSocketClient({ sendOn: vi.fn() });
+
+    const join = client.joinRoomAndWait('room-1', socket, { timeoutMs: 1000 });
+    socket.emitToClient('disconnect', 'transport close');
+
+    await expect(join).rejects.toBe('transport close');
+    expect(socket.listenerCount('joinRoomSuccess')).toBe(0);
+    expect(socket.listenerCount('joinRoomError')).toBe(0);
+    expect(socket.listenerCount('error')).toBe(0);
+    expect(socket.listenerCount('disconnect')).toBe(0);
     vi.useRealTimers();
   });
 
@@ -216,6 +234,7 @@ describe('socketClient', () => {
     expect(socket.listenerCount('joinRoomSuccess')).toBe(0);
     expect(socket.listenerCount('joinRoomError')).toBe(0);
     expect(socket.listenerCount('error')).toBe(0);
+    expect(socket.listenerCount('disconnect')).toBe(0);
     vi.useRealTimers();
   });
 

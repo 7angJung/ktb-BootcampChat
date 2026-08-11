@@ -1,7 +1,9 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ChatRoomView from '../ChatRoomView';
+
+const roomViewMocks = vi.hoisted(() => ({ connectionStatus: 'disconnected' }));
 
 vi.mock('../useChatRoom', () => ({
   useChatRoom: () => ({
@@ -9,7 +11,7 @@ vi.mock('../useChatRoom', () => ({
     messages: [],
     streamingMessages: {},
     connected: false,
-    connectionStatus: 'disconnected',
+    connectionStatus: roomViewMocks.connectionStatus,
     messageLoadError: null,
     retryMessageLoad: vi.fn(),
     currentUser: { _id: 'user-1', name: 'Tester' },
@@ -53,10 +55,14 @@ vi.mock('@/components/ChatMessages', () => ({
 }));
 
 vi.mock('@/components/ChatInput', () => ({
-  default: () => <div>chat input</div>,
+  default: ({ disabled }) => <div>chat input: {disabled ? 'disabled' : 'enabled'}</div>,
 }));
 
 describe('ChatRoomView', () => {
+  beforeEach(() => {
+    roomViewMocks.connectionStatus = 'disconnected';
+  });
+
   it('keeps messages visible while disconnected and defers to the status badge', () => {
     render(<ChatRoomView roomId="room-1" onNavigate={vi.fn()} onReplace={vi.fn()} asPath="/chat/room-1" />);
 
@@ -64,5 +70,17 @@ describe('ChatRoomView', () => {
     expect(screen.getByText('chat messages')).toBeInTheDocument();
     expect(screen.getByText('room info: disconnected')).toBeInTheDocument();
     expect(screen.queryByText(/연결이 끊어졌습니다/)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['connected', 'disabled'],
+    ['joining', 'disabled'],
+    ['ready', 'enabled'],
+    ['error', 'disabled'],
+  ])('keeps chat input %s while room status is %s', (connectionStatus, expected) => {
+    roomViewMocks.connectionStatus = connectionStatus;
+    render(<ChatRoomView roomId="room-1" onNavigate={vi.fn()} onReplace={vi.fn()} asPath="/chat/room-1" />);
+
+    expect(screen.getByText(`chat input: ${expected}`)).toBeInTheDocument();
   });
 });

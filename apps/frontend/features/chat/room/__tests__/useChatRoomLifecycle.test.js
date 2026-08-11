@@ -24,7 +24,7 @@ const createLifecycleHarness = (overrides = {}) => {
     isInitialized: false,
     loading: false,
     error: '',
-    connectionStatus: 'checking',
+    connectionStatus: 'disconnected',
     ...overrides.state,
   };
   const refs = {
@@ -98,7 +98,7 @@ describe('useChatRoomLifecycle', () => {
     const { result } = createLifecycleHarness();
 
     expect(result.current).toEqual({
-      connectionStatus: 'checking',
+      connectionStatus: 'disconnected',
       retryMessageLoad: expect.any(Function),
     });
   });
@@ -127,12 +127,11 @@ describe('useChatRoomLifecycle', () => {
     expect(harness.actions.connectionFailed).toHaveBeenCalledWith(
       '채팅 서버와의 연결이 끊어졌습니다.',
     );
-    expect(harness.actions.connectionReconnecting).toHaveBeenCalledTimes(1);
-    expect(harness.actions.connectionRecovered).toHaveBeenCalledTimes(1);
+    expect(harness.actions.connectionReconnecting).toHaveBeenCalledTimes(2);
     expect(harness.actions.setError).not.toHaveBeenCalledWith(
       '채팅 서버와의 연결이 끊어졌습니다.',
     );
-    expect(harness.setConnected).toHaveBeenCalledWith(true);
+    expect(harness.setConnected).toHaveBeenCalledWith(false);
   });
 
   it('does not redispatch the same connected state after reducer state catches up', async () => {
@@ -147,6 +146,20 @@ describe('useChatRoomLifecycle', () => {
     harness.rerender();
 
     expect(harness.actions.connectionEstablished).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['joining', 'ready'])('does not downgrade %s to transport connected', async (connectionStatus) => {
+    const socket = { connected: true };
+    const harness = createLifecycleHarness({
+      socket,
+      state: { connectionStatus, isInitialized: true },
+    });
+
+    await waitFor(() => {
+      expect(socketClient.subscribeConnectionEvents).toHaveBeenCalled();
+    });
+
+    expect(harness.actions.connectionEstablished).not.toHaveBeenCalled();
   });
 
   it('does not leave the room when initialization state catches up during rerender', async () => {

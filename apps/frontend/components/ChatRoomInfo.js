@@ -9,19 +9,40 @@ const ChatRoomInfo = ({ room, connectionStatus }) => {
   };
 
   const getConnectionStatus = () => {
+    if (connectionStatus === 'ready') {
+      return {
+        label: "채팅 가능",
+        color: "success"
+      };
+    }
+
     if (connectionStatus === 'connected') {
       return {
-        label: "연결됨",
-        color: "success"
+        label: "서버 연결됨",
+        color: "primary"
+      };
+    }
+
+    if (connectionStatus === 'joining') {
+      return {
+        label: "채팅방 입장 중...",
+        color: "warning"
       };
     }
 
     // 재연결이 아직 남아 있는 동안은 복구 가능한 상태다.
     // 화면을 오류로 덮지 않고 배지로만 알린다.
-    if (connectionStatus === 'connecting' || connectionStatus === 'disconnected') {
+    if (connectionStatus === 'connecting') {
       return {
         label: "재접속 중...",
         color: "warning"
+      };
+    }
+
+    if (connectionStatus === 'disconnected') {
+      return {
+        label: "연결 끊김",
+        color: "danger"
       };
     }
 

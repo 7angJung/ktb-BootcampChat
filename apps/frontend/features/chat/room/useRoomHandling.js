@@ -7,6 +7,12 @@ import {
   processLoadedRoomMessages,
 } from './roomEventHandlers';
 
+const getRoomConnectionErrorMessage = error => (
+  error?.message?.includes('초과')
+    ? '채팅방 연결 시간이 초과되었습니다.'
+    : error?.message || '채팅방 연결에 실패했습니다.'
+);
+
 export const useRoomHandling = ({
   roomId,
   route,
@@ -36,6 +42,8 @@ export const useRoomHandling = ({
     setHasMoreMessages,
     setLoadingMessages,
     setupStarted,
+    joinStarted,
+    connectionEstablished,
     setupSucceeded,
     setupFailed,
   } = actions;
@@ -171,8 +179,8 @@ export const useRoomHandling = ({
   }, [userRooms, onReplace, socketRef, attachSocket, user]);
 
   const joinRoom = useCallback(
-    async (roomId) => {
-      if (!roomId || !mountedRef.current) {
+    async (targetRoomId) => {
+      if (!targetRoomId || !mountedRef.current) {
         throw new Error('잘못된 채팅방 정보입니다.');
       }
 
@@ -181,11 +189,36 @@ export const useRoomHandling = ({
         throw new Error('Socket not connected');
       }
 
-      const data = await socketClient.joinRoomAndWait(roomId, socket);
-      userRooms.current?.set(socket.id, roomId);
+      joinStarted();
+      const joiningSocketId = socket.id;
+      const data = await socketClient.joinRoomAndWait(targetRoomId, socket);
+
+      // A previous socket may complete after Socket.IO has already replaced it.
+      // Its response must not overwrite the state owned by the live socket.
+      if (
+        !mountedRef.current
+        || socketRef.current !== socket
+        || socketRef.current?.id !== joiningSocketId
+        || !socketRef.current?.connected
+      ) {
+        return null;
+      }
+
+      const responseRoomId = data?.roomId;
+      const payloadRoomId = data?.room?._id ?? data?.room?.id;
+      if (
+        responseRoomId !== targetRoomId
+        || payloadRoomId !== targetRoomId
+        || !Array.isArray(data?.messages)
+        || typeof data?.hasMore !== 'boolean'
+      ) {
+        throw new Error('채팅방 초기 데이터가 올바르지 않습니다.');
+      }
+
+      userRooms.current?.set(socket.id, targetRoomId);
       return data;
     },
-    [socketRef, mountedRef, userRooms]
+    [socketRef, mountedRef, userRooms, joinStarted]
   );
 
   // 재연결 뒤 필요한 것은 방 참가 상태 복구뿐이다. socket.io 가 같은 소켓을
@@ -197,17 +230,21 @@ export const useRoomHandling = ({
       return;
     }
 
-    const joinResult = await joinRoom(roomId);
+    try {
+      const joinResult = await joinRoom(roomId);
+      if (!joinResult) return;
 
-    if (joinResult?.room) {
-      setRoom(joinResult.room);
-    }
-    if (Array.isArray(joinResult?.messages)) {
       processMessages(joinResult.messages, joinResult.hasMore, true);
-    }
+      setupSucceeded(joinResult.room);
 
-    if (mountedRef.current) {
-      setupCompleteRef.current = true;
+      if (mountedRef.current) {
+        setupCompleteRef.current = true;
+      }
+    } catch (error) {
+      if (mountedRef.current) {
+        setupFailed(getRoomConnectionErrorMessage(error));
+      }
+      throw error;
     }
   }, [
     roomId,
@@ -215,8 +252,9 @@ export const useRoomHandling = ({
     mountedRef,
     setupCompleteRef,
     joinRoom,
-    setRoom,
     processMessages,
+    setupSucceeded,
+    setupFailed,
   ]);
 
   const loadInitialMessages = useCallback(
@@ -278,6 +316,10 @@ export const useRoomHandling = ({
         setupStarted();
         // 1. Socket Setup
         attachSocket(await setupSocket());
+        if (!socketRef.current?.connected) {
+          throw new Error('Socket not connected');
+        }
+        connectionEstablished();
 
         // 2. Subscribe before joining so no room event is missed.
         if (mountedRef.current) {
@@ -287,10 +329,8 @@ export const useRoomHandling = ({
         // 3. Socket join returns room metadata and initial messages together.
         if (mountedRef.current && socketRef.current?.connected) {
           const joinResult = await joinRoom(roomId);
-          const roomData = joinResult?.room;
-          if (!roomData || !Array.isArray(joinResult?.messages)) {
-            throw new Error('채팅방 초기 데이터가 올바르지 않습니다.');
-          }
+          if (!joinResult) return;
+          const roomData = joinResult.room;
 
           // Ensure current user is included in participants for display
           if (currentUser && roomData.participants) {
@@ -320,9 +360,7 @@ export const useRoomHandling = ({
         }
       } catch (error) {
         if (mountedRef.current) {
-          const errorMessage = error.message.includes('시간 초과')
-            ? '채팅방 연결 시간이 초과되었습니다.'
-            : error.message || '채팅방 연결에 실패했습니다.';
+          const errorMessage = getRoomConnectionErrorMessage(error);
 
           setupFailed(errorMessage);
           cleanup('ERROR');
@@ -355,6 +393,7 @@ export const useRoomHandling = ({
     cleanup,
     setupEventListeners,
     setupStarted,
+    connectionEstablished,
     setupSucceeded,
     setupFailed,
     currentUser,

@@ -180,7 +180,7 @@ const ChatRoomView = ({ roomId, onNavigate, onReplace, asPath }) => {
       <ChatInput
         onSubmit={handleMessageSubmit}
         fileInputRef={fileInputRef}
-        disabled={connectionStatus !== 'connected'}
+        disabled={connectionStatus !== 'ready'}
         room={room}
       />
     </VStack>

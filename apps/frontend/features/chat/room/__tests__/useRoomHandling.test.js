@@ -71,6 +71,8 @@ const createHarness = () => {
   };
   const reducerActions = {
     setupStarted: vi.fn(),
+    joinStarted: vi.fn(),
+    connectionEstablished: vi.fn(),
     setupSucceeded: vi.fn(),
     setupFailed: vi.fn(),
     cleanupManual: vi.fn(),
@@ -253,6 +255,8 @@ describe('useRoomHandling', () => {
     expect(harness.initialLoadCompletedRef.current).toBe(true);
     expect(harness.processedMessageIds.current.has('join-message-1')).toBe(true);
     expect(harness.actions.setupStarted).toHaveBeenCalledTimes(1);
+    expect(harness.actions.connectionEstablished).toHaveBeenCalledTimes(1);
+    expect(harness.actions.joinStarted).toHaveBeenCalledTimes(1);
     expect(harness.actions.setupSucceeded).toHaveBeenCalledWith(
       expect.objectContaining({ _id: 'room-1' }),
     );
@@ -271,6 +275,68 @@ describe('useRoomHandling', () => {
     ).rejects.toThrow('채팅방 초기 데이터가 올바르지 않습니다.');
 
     expect(socketClient.fetchPreviousMessagesAndWait).not.toHaveBeenCalled();
+  });
+
+  it('rejects a join response for a different room', async () => {
+    socketClient.joinRoomAndWait.mockResolvedValueOnce({
+      roomId: 'room-2',
+      room: { _id: 'room-2', participants: [] },
+      messages: [],
+      hasMore: false,
+    });
+    const harness = createHarness();
+
+    await expect(act(async () => harness.result.current.setupRoom())).rejects.toThrow(
+      '채팅방 초기 데이터가 올바르지 않습니다.',
+    );
+
+    expect(harness.actions.setupSucceeded).not.toHaveBeenCalled();
+    expect(harness.actions.setupFailed).toHaveBeenCalled();
+  });
+
+  it('ignores a response from a socket that was replaced while joining', async () => {
+    let resolveJoin;
+    socketClient.joinRoomAndWait.mockReturnValueOnce(new Promise(resolve => {
+      resolveJoin = resolve;
+    }));
+    const harness = createHarness();
+    let setupPromise;
+
+    await act(async () => {
+      setupPromise = harness.result.current.setupRoom();
+      await Promise.resolve();
+    });
+
+    harness.socketRef.current = { ...createSocket(), id: 'socket-2' };
+    resolveJoin({
+      roomId: 'room-1',
+      room: { _id: 'room-1', participants: [] },
+      messages: [],
+      hasMore: false,
+    });
+    await act(async () => setupPromise);
+
+    expect(harness.actions.setupSucceeded).not.toHaveBeenCalled();
+    expect(harness.actions.setupFailed).not.toHaveBeenCalled();
+    expect(harness.setupCompleteRef.current).toBe(false);
+  });
+
+  it('ends a failed rejoin in error instead of leaving the room joining', async () => {
+    const harness = createHarness();
+    harness.socketRef.current = createSocket();
+    socketClient.joinRoomAndWait.mockRejectedValueOnce(
+      new Error('채팅방 입장 시간이 초과되었습니다.'),
+    );
+
+    await expect(act(async () => harness.result.current.rejoinRoom())).rejects.toThrow(
+      '채팅방 입장 시간이 초과되었습니다.',
+    );
+
+    expect(harness.actions.joinStarted).toHaveBeenCalledOnce();
+    expect(harness.actions.setupFailed).toHaveBeenCalledWith(
+      '채팅방 연결 시간이 초과되었습니다.',
+    );
+    expect(harness.actions.setupSucceeded).not.toHaveBeenCalled();
   });
 
   it('records setup failure through semantic reducer actions', async () => {

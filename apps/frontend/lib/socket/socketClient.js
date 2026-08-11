@@ -166,7 +166,7 @@ export const createSocketClient = (service = socketService) => {
     waitForSocketEvent({
       socket,
       successEvent: 'joinRoomSuccess',
-      errorEvents: ['joinRoomError', 'error'],
+      errorEvents: ['joinRoomError', 'error', 'disconnect'],
       timeoutMs,
       timeoutMessage: '채팅방 입장 시간이 초과되었습니다.',
       send: () => sendDomainEvent(service, socket, 'joinRoom', { roomId }),
