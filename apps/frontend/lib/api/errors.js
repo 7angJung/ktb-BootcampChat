@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 export const RETRY_CONFIG = {
-  maxRetries: 2,
+  maxRetries: 1,
   initialDelayMs: 500,
   maxDelayMs: 2000,
   backoffFactor: 2,
@@ -16,16 +16,26 @@ export const RETRY_CONFIG = {
 };
 
 export const getRetryDelay = (retryCount) => {
-  const delay =
+  const cappedDelay = Math.min(
     RETRY_CONFIG.initialDelayMs *
-    Math.pow(RETRY_CONFIG.backoffFactor, retryCount) *
-    (1 + Math.random() * 0.1);
+      Math.pow(RETRY_CONFIG.backoffFactor, Math.max(retryCount - 1, 0)),
+    RETRY_CONFIG.maxDelayMs
+  );
 
-  return Math.min(delay, RETRY_CONFIG.maxDelayMs);
+  return Math.random() * cappedDelay;
 };
 
 export const isRetryableError = (error) => {
   if (!error) {
+    return false;
+  }
+
+  const method = error.config?.method?.toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD') {
+    return false;
+  }
+
+  if (error.config?.skipRetry) {
     return false;
   }
 

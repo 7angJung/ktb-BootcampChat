@@ -19,7 +19,9 @@ const STATUS_CONFIG = {
   [CONNECTION_STATUS.ERROR]: { label: "연결 오류", color: "danger" },
 };
 
-const ROOM_LIST_REFRESH_INTERVAL = 30000;
+const ROOM_LIST_INITIAL_REFRESH_DELAY = 30000;
+const ROOM_LIST_REFRESH_INTERVAL = 120000;
+const ROOM_LIST_REFRESH_JITTER = 30000;
 
 const LoadingIndicator = ({ text }) => (
   <HStack $css={{ gap: '$200', justifyContent: 'center', alignItems: 'center' }}>
@@ -35,8 +37,6 @@ export default function ChatRoomsView({ router }) {
   const {
     connectionStatus,
     setConnectionStatus,
-    isRetrying,
-    attemptConnection,
   } = useServerConnection();
 
   const {
@@ -55,13 +55,8 @@ export default function ChatRoomsView({ router }) {
   } = useRoomList({
     currentUser,
     router,
-    connectionStatus,
-    setConnectionStatus,
-    isRetrying,
-    attemptConnection,
   });
 
-  const connectionCheckTimerRef = useRef(null);
   const initialFetchStartedRef = useRef(false);
   const refreshRoomsRef = useRef(refreshRooms);
 
@@ -104,20 +99,6 @@ export default function ChatRoomsView({ router }) {
     };
   }, [currentUserKey, fetchRooms]);
 
-  useEffect(() => {
-    if (!currentUserKey || connectionStatus !== CONNECTION_STATUS.CHECKING) return;
-
-    connectionCheckTimerRef.current = setInterval(() => {
-      attemptConnection();
-    }, 5000);
-
-    return () => {
-      if (connectionCheckTimerRef.current) {
-        clearInterval(connectionCheckTimerRef.current);
-      }
-    };
-  }, [currentUserKey, connectionStatus, attemptConnection]);
-
   // 활성도 지표는 소켓 이벤트만으로 만료를 알 수 없어 주기적으로 다시 조회한다.
   // 보이지 않는 탭에서는 갱신을 멈추고, 다시 보일 때 즉시 한 번 따라잡는다.
   useEffect(() => {
@@ -128,11 +109,21 @@ export default function ChatRoomsView({ router }) {
       refreshRoomsRef.current({ silent: true });
     };
 
-    const refreshTimer = setInterval(refreshWhenVisible, ROOM_LIST_REFRESH_INTERVAL);
+    let refreshTimer;
+    const scheduleFallbackRefresh = (delay) => {
+      refreshTimer = setTimeout(() => {
+        refreshWhenVisible();
+        scheduleFallbackRefresh(
+          ROOM_LIST_REFRESH_INTERVAL + Math.random() * ROOM_LIST_REFRESH_JITTER
+        );
+      }, delay);
+    };
+
+    scheduleFallbackRefresh(ROOM_LIST_INITIAL_REFRESH_DELAY);
     document.addEventListener('visibilitychange', refreshWhenVisible);
 
     return () => {
-      clearInterval(refreshTimer);
+      clearTimeout(refreshTimer);
       document.removeEventListener('visibilitychange', refreshWhenVisible);
     };
   }, [currentUserKey, connectionStatus]);
@@ -174,7 +165,7 @@ export default function ChatRoomsView({ router }) {
                   variant="outline"
                   size="sm"
                   onClick={() => fetchRooms()}
-                  disabled={isRetrying}
+                  disabled={loading}
                 >
                   <RefreshOutlineIcon size={16} />
                   재연결
@@ -211,7 +202,7 @@ export default function ChatRoomsView({ router }) {
               <VStack $css={{ gap: '$150', alignItems: 'flex-start' }}>
                 <Text typography="subtitle2" style={{ fontWeight: 500 }}>{error.title}</Text>
                 <Text typography="body2">{error.message}</Text>
-                {error.showRetry && !isRetrying && (
+                {error.showRetry && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -235,7 +226,7 @@ export default function ChatRoomsView({ router }) {
           <VStack $css={{ gap: '$300', width: '100%' }}>
             <RoomsTable
               rooms={rooms}
-              connectionStatus={connectionStatus}
+              joiningRoom={joiningRoom}
               onJoinRoom={handleJoinRoom}
             />
             {hasMore && (
@@ -258,7 +249,7 @@ export default function ChatRoomsView({ router }) {
             <Button
               colorPalette="primary"
               onClick={() => router.push('/chat/new')}
-              disabled={connectionStatus !== CONNECTION_STATUS.CONNECTED}
+              disabled={joiningRoom}
             >
               새 채팅방 만들기
             </Button>

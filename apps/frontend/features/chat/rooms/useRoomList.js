@@ -1,6 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
 import axiosInstance from '@/services/axios';
-import { CONNECTION_STATUS } from './useServerConnection';
 
 const ROOM_PAGE_SIZE = 20;
 
@@ -13,10 +12,6 @@ const mergeRoomsById = (currentRooms, nextRooms) => {
 export const useRoomList = ({
   currentUser,
   router,
-  connectionStatus,
-  setConnectionStatus,
-  isRetrying,
-  attemptConnection,
 }) => {
   const [rooms, setRooms] = useState([]);
   const [error, setError] = useState(null);
@@ -33,7 +28,7 @@ export const useRoomList = ({
   const handleFetchError = useCallback((error) => {
     let errorMessage = '채팅방 목록을 불러오는데 실패했습니다.';
     let errorType = 'danger';
-    let showRetry = !isRetrying;
+    let showRetry = true;
 
     if (error.message === 'AUTH_EXPIRED') {
       errorMessage = '인증이 만료되었습니다. 다시 로그인해주세요.';
@@ -47,7 +42,6 @@ export const useRoomList = ({
         showRetry,
       });
 
-      setConnectionStatus(CONNECTION_STATUS.ERROR);
       return;
     }
 
@@ -64,12 +58,9 @@ export const useRoomList = ({
       showRetry,
     });
 
-    setConnectionStatus(CONNECTION_STATUS.ERROR);
-  }, [isRetrying, setConnectionStatus]);
+  }, []);
 
   const loadRooms = useCallback(async ({ targetPage = 0, append = false } = {}) => {
-    await attemptConnection();
-
     const response = await axiosInstance.get('/api/rooms', {
       params: { page: targetPage, size: ROOM_PAGE_SIZE },
     });
@@ -83,7 +74,7 @@ export const useRoomList = ({
       : response.data.data);
     setPage(response.data.metadata?.page ?? targetPage);
     setHasMore(Boolean(response.data.metadata?.hasMore));
-  }, [attemptConnection]);
+  }, []);
 
   const fetchRooms = useCallback(async () => {
     if (!currentUser?.token || isLoadingRef.current) {
@@ -168,12 +159,7 @@ export const useRoomList = ({
   }, [currentUser, hasMore, loadRooms, loadingMore, page]);
 
   const handleJoinRoom = useCallback(async (roomId) => {
-    if (connectionStatus !== CONNECTION_STATUS.CONNECTED) {
-      setError({
-        title: '채팅방 입장 실패',
-        message: '서버와 연결이 끊어져 있습니다.',
-        type: 'danger',
-      });
+    if (joiningRoom) {
       return;
     }
 
@@ -201,7 +187,7 @@ export const useRoomList = ({
     } finally {
       setJoiningRoom(false);
     }
-  }, [connectionStatus, router]);
+  }, [joiningRoom, router]);
 
   return {
     rooms,
