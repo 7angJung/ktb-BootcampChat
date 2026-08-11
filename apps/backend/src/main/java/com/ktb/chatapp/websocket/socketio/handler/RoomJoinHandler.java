@@ -8,6 +8,7 @@ import com.ktb.chatapp.dto.JoinRoomSuccessResponse;
 import com.ktb.chatapp.dto.RoomResponse;
 import com.ktb.chatapp.dto.UserResponse;
 import com.ktb.chatapp.model.Room;
+import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
@@ -56,12 +57,6 @@ public class RoomJoinHandler {
                 return;
             }
             
-            var userOpt = userRepository.findById(userId);
-            if (userOpt.isEmpty()) {
-                client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "User not found"));
-                return;
-            }
-            
             var roomOpt = roomRepository.findById(roomId);
             if (roomOpt.isEmpty()) {
                 client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다."));
@@ -74,6 +69,22 @@ public class RoomJoinHandler {
                     "message", "먼저 채팅방 입장 절차를 완료해주세요."
                 ));
                 return;
+            }
+
+            Set<String> userIdsToLoad = new LinkedHashSet<>(room.getParticipantIds());
+            if (room.getCreator() != null) {
+                userIdsToLoad.add(room.getCreator());
+            }
+            Map<String, User> usersById = new HashMap<>();
+            userRepository.findAllById(userIdsToLoad)
+                    .forEach(user -> usersById.put(user.getId(), user));
+            if (!usersById.containsKey(userId)) {
+                userRepository.findById(userId)
+                        .ifPresent(user -> usersById.put(user.getId(), user));
+                if (!usersById.containsKey(userId)) {
+                    client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "User not found"));
+                    return;
+                }
             }
 
             // REST 입장 API가 참가자 등록을 담당한다. Socket은 연결 상태만 복구한다.
@@ -89,18 +100,13 @@ public class RoomJoinHandler {
             // 참가자 정보 조회
             List<UserResponse> participants = room.getParticipantIds()
                     .stream()
-                    .map(userRepository::findById)
-                    .filter(Optional::isPresent)
-                    .map(Optional::get)
+                    .map(usersById::get)
+                    .filter(Objects::nonNull)
                     .map(UserResponse::from)
                     .toList();
 
-            UserResponse creator = participants.stream()
-                .filter(participant -> Objects.equals(participant.getId(), room.getCreator()))
-                .findFirst()
-                .orElseGet(() -> room.getCreator() == null ? null : userRepository.findById(room.getCreator())
-                    .map(UserResponse::from)
-                    .orElse(null));
+            User creatorUser = room.getCreator() == null ? null : usersById.get(room.getCreator());
+            UserResponse creator = creatorUser == null ? null : UserResponse.from(creatorUser);
 
             RoomResponse roomResponse = RoomResponse.builder()
                 .id(room.getId())

@@ -4,6 +4,7 @@ import MessageContent from './MessageContent';
 import MessageActions from './MessageActions';
 import CustomAvatar from './CustomAvatar';
 import ReadStatus from './ReadStatus';
+import MessageDeliveryStatus from './MessageDeliveryStatus';
 
 const UserMessage = ({
   msg = {}, 
@@ -79,20 +80,23 @@ const UserMessage = ({
             <div className={`text-xs ${isMine ? 'text-blue-400' : 'text-gray-300'}`}>
               {formattedTime}
             </div>
-            <ReadStatus
-              messageType={msg.type}
-              participants={room?.participants || []}
-              readers={msg.readers || []}
-              messageId={msg._id}
-              roomId={room?.id || room?._id || room?.roomId}
-              messageRef={messageDomRef}
-              currentUserId={currentUser?._id || currentUser?.id}
-            />
+            <MessageDeliveryStatus status={msg.deliveryStatus} error={msg.deliveryError} />
+            {msg.deliveryStatus !== 'pending' && msg.deliveryStatus !== 'rejected' && (
+              <ReadStatus
+                messageType={msg.type}
+                participants={room?.participants || []}
+                readers={msg.readers || []}
+                messageId={msg._id}
+                roomId={room?.id || room?._id || room?.roomId}
+                messageRef={messageDomRef}
+                currentUserId={currentUser?._id || currentUser?.id}
+              />
+            )}
           </HStack>
         </div>
 
         {/* Message Actions */}
-        <MessageActions
+        {msg.deliveryStatus !== 'pending' && msg.deliveryStatus !== 'rejected' && <MessageActions
           messageId={msg._id}
           messageContent={msg.content}
           reactions={msg.reactions}
@@ -101,7 +105,7 @@ const UserMessage = ({
           onReactionRemove={onReactionRemove}
           isMine={isMine}
           room={room}
-        />
+        />}
       </VStack>
     </div>
   );

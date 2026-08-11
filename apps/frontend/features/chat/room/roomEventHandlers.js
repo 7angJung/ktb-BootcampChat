@@ -1,4 +1,10 @@
 import { deriveUniqueSortedMessages } from '../messages/useMessageList';
+import {
+  normalizeDeliveredMessages,
+  rejectPendingMessage,
+  removePendingMessage,
+  settleDeliveredMessage,
+} from '../messages/messageDelivery';
 
 export const processLoadedRoomMessages = ({
   loadedMessages,
@@ -13,16 +19,17 @@ export const processLoadedRoomMessages = ({
     throw new Error('Invalid messages format');
   }
 
+  const normalizedMessages = normalizeDeliveredMessages(loadedMessages);
   const processedSnapshot = new Set(processedMessageIds.current);
   processedMessageIds.current = deriveUniqueSortedMessages(
     [],
-    loadedMessages,
+    normalizedMessages,
     processedSnapshot
   ).processedMessageIds;
 
   let nextMessages;
   setMessages(prev => {
-    nextMessages = deriveUniqueSortedMessages(prev, loadedMessages, processedSnapshot).messages;
+    nextMessages = deriveUniqueSortedMessages(prev, normalizedMessages, processedSnapshot).messages;
     return nextMessages;
   });
   setHasMoreMessages(hasMore);
@@ -116,9 +123,13 @@ export const createRoomEventHandlers = ({
     },
     onMessage: (incoming) => {
       if (!mountedRef.current || messageProcessingRef.current) return;
-      if (!incoming?._id || processedMessageIds.current.has(incoming._id)) return;
+      if (!incoming?._id) return;
+      if (processedMessageIds.current.has(incoming._id)) {
+        setMessages(prev => settleDeliveredMessage(prev, incoming));
+        return;
+      }
       processedMessageIds.current.add(incoming._id);
-      setMessages(prev => appendIncomingMessage(prev, incoming));
+      setMessages(prev => settleDeliveredMessage(prev, incoming));
     },
     onPreviousMessagesLoaded: handlePreviousMessages,
     onMessageReactionUpdate: (data) => {
@@ -135,7 +146,21 @@ export const createRoomEventHandlers = ({
       if (!mountedRef.current) return;
       console.error('Socket error:', error);
       if (error?.code === 'MESSAGE_REJECTED') {
+        if (error.clientMessageId) {
+          setMessages(prev => removePendingMessage(
+            prev,
+            error.clientMessageId,
+          ));
+        }
         showRejectedMessage(error.message || '금칙어가 포함되어 메시지를 전송할 수 없습니다.');
+        return;
+      }
+      if (error?.clientMessageId) {
+        setMessages(prev => rejectPendingMessage(
+          prev,
+          error.clientMessageId,
+          error.message,
+        ));
         return;
       }
       setError(error.message || '채팅 연결에 문제가 발생했습니다.');

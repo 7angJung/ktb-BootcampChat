@@ -184,6 +184,7 @@ describe('socketClient', () => {
     expect(socket.listenerCount('joinRoomSuccess')).toBe(0);
     expect(socket.listenerCount('joinRoomError')).toBe(0);
     expect(socket.listenerCount('error')).toBe(0);
+    expect(socket.listenerCount('disconnect')).toBe(0);
     vi.useRealTimers();
   });
 
@@ -200,6 +201,23 @@ describe('socketClient', () => {
     expect(socket.listenerCount('joinRoomSuccess')).toBe(0);
     expect(socket.listenerCount('joinRoomError')).toBe(0);
     expect(socket.listenerCount('error')).toBe(0);
+    expect(socket.listenerCount('disconnect')).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it('rejects joinRoomAndWait immediately when the socket disconnects', async () => {
+    vi.useFakeTimers();
+    const socket = createEventSocket();
+    const client = createSocketClient({ sendOn: vi.fn() });
+
+    const join = client.joinRoomAndWait('room-1', socket, { timeoutMs: 1000 });
+    socket.emitToClient('disconnect', 'transport close');
+
+    await expect(join).rejects.toBe('transport close');
+    expect(socket.listenerCount('joinRoomSuccess')).toBe(0);
+    expect(socket.listenerCount('joinRoomError')).toBe(0);
+    expect(socket.listenerCount('error')).toBe(0);
+    expect(socket.listenerCount('disconnect')).toBe(0);
     vi.useRealTimers();
   });
 
@@ -216,6 +234,7 @@ describe('socketClient', () => {
     expect(socket.listenerCount('joinRoomSuccess')).toBe(0);
     expect(socket.listenerCount('joinRoomError')).toBe(0);
     expect(socket.listenerCount('error')).toBe(0);
+    expect(socket.listenerCount('disconnect')).toBe(0);
     vi.useRealTimers();
   });
 
@@ -226,12 +245,18 @@ describe('socketClient', () => {
       sendOn: vi.fn(),
     };
     const client = createSocketClient(service);
-    const payload = { room: 'room-1', type: 'text', content: 'hello' };
+    const payload = {
+      room: 'room-1',
+      type: 'text',
+      content: 'hello',
+      clientMessageId: 'client-1',
+    };
 
     const send = client.sendChatMessageAndWait(payload, socket, { timeoutMs: 1000 });
-    socket.emitToClient('message', { id: 'message-1' });
+    socket.emitToClient('message', { id: 'other-message', clientMessageId: 'client-2' });
+    socket.emitToClient('message', { id: 'message-1', clientMessageId: 'client-1' });
 
-    await expect(send).resolves.toEqual({ id: 'message-1' });
+    await expect(send).resolves.toEqual({ id: 'message-1', clientMessageId: 'client-1' });
     expect(service.sendOn).toHaveBeenCalledWith(socket, 'chatMessage', payload);
     expect(socket.listenerCount('message')).toBe(0);
     expect(socket.listenerCount('error')).toBe(0);
@@ -242,10 +267,10 @@ describe('socketClient', () => {
     vi.useFakeTimers();
     const socket = createEventSocket();
     const client = createSocketClient({ sendOn: vi.fn() });
-    const error = new Error('rejected');
+    const error = { code: 'MESSAGE_REJECTED', message: 'rejected', clientMessageId: 'client-1' };
 
     const send = client.sendChatMessageAndWait(
-      { room: 'room-1', type: 'text', content: 'hello' },
+      { room: 'room-1', type: 'text', content: 'hello', clientMessageId: 'client-1' },
       socket,
       { timeoutMs: 1000 },
     );
@@ -254,6 +279,23 @@ describe('socketClient', () => {
     await expect(send).rejects.toBe(error);
     expect(socket.listenerCount('message')).toBe(0);
     expect(socket.listenerCount('error')).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it('ignores errors for another pending message', async () => {
+    vi.useFakeTimers();
+    const socket = createEventSocket();
+    const client = createSocketClient({ sendOn: vi.fn() });
+    const payload = { room: 'room-1', type: 'text', content: 'hello', clientMessageId: 'client-1' };
+
+    const send = client.sendChatMessageAndWait(payload, socket, { timeoutMs: 1000 });
+    socket.emitToClient('error', {
+      code: 'MESSAGE_REJECTED',
+      clientMessageId: 'client-2',
+    });
+    socket.emitToClient('message', { _id: 'message-1', clientMessageId: 'client-1' });
+
+    await expect(send).resolves.toMatchObject({ _id: 'message-1' });
     vi.useRealTimers();
   });
 

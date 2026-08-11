@@ -26,4 +26,6 @@ public interface RoomRepository extends MongoRepository<Room, String> {
     @Query("{'_id': ?0}")
     @Update("{'$pull': {'participantIds': ?1}}")
     void removeParticipant(String roomId, String userId);
+
+    boolean existsByIdAndParticipantIdsContaining(String roomId, String userId);
 }

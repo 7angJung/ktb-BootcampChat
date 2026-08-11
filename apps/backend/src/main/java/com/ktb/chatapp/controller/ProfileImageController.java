@@ -10,7 +10,13 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import java.net.URI;
+import java.time.Duration;
+import java.util.Optional;
 import org.springframework.core.io.Resource;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.MediaTypeFactory;
 import org.springframework.http.ResponseEntity;
@@ -29,6 +35,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/files/profiles")
 public class ProfileImageController {
 
+    private static final Duration S3_URL_TTL = Duration.ofMinutes(5);
+    private static final Duration PROFILE_CACHE_TTL = Duration.ofMinutes(5);
+
     private final StoragePort storagePort;
 
     @Operation(summary = "프로필 이미지 조회", description = "프로필 이미지를 반환합니다. 인증이 필요하지 않습니다.")
@@ -39,16 +48,27 @@ public class ProfileImageController {
     })
     @SecurityRequirement(name = "")
     @GetMapping("/{filename:.+}")
-    public ResponseEntity<Resource> getProfileImage(
+    public ResponseEntity<?> getProfileImage(
             @Parameter(description = "조회할 프로필 이미지 파일명") @PathVariable String filename) {
 
         if (FileUtil.containsPathTraversal(filename)) {
             return ResponseEntity.badRequest().build();
         }
 
-        return storagePort.open(StorageKey.profile(filename))
+        String key = StorageKey.profile(filename);
+        ContentDisposition disposition = ContentDisposition.inline().filename(filename).build();
+        Optional<URI> offloadUrl = storagePort.offloadUrl(key, S3_URL_TTL, disposition);
+        if (offloadUrl.isPresent()) {
+            return ResponseEntity.status(HttpStatus.TEMPORARY_REDIRECT)
+                    .location(offloadUrl.get())
+                    .cacheControl(CacheControl.maxAge(PROFILE_CACHE_TTL).cachePrivate())
+                    .build();
+        }
+
+        return storagePort.open(key)
                 .map(resource -> ResponseEntity.ok()
                         .contentType(contentTypeOf(filename))
+                        .cacheControl(CacheControl.maxAge(PROFILE_CACHE_TTL).cachePublic())
                         .body(resource))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }

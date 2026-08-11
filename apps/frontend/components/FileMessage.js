@@ -12,6 +12,7 @@ import MessageContent from './MessageContent';
 import MessageActions from './MessageActions';
 import FileActions from './FileActions';
 import ReadStatus from './ReadStatus';
+import MessageDeliveryStatus from './MessageDeliveryStatus';
 import fileService from '@/services/fileService';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -360,20 +361,23 @@ const FileMessage = ({
             >
               {formattedTime}
             </div>
-            <ReadStatus
-              messageType={msg.type}
-              participants={room?.participants || []}
-              readers={msg.readers || []}
-              messageId={msg._id}
-              roomId={room?.id || room?._id || room?.roomId}
-              messageRef={messageDomRef}
-              currentUserId={currentUser?._id || currentUser?.id}
-            />
+            <MessageDeliveryStatus status={msg.deliveryStatus} error={msg.deliveryError} />
+            {msg.deliveryStatus !== 'pending' && msg.deliveryStatus !== 'rejected' && (
+              <ReadStatus
+                messageType={msg.type}
+                participants={room?.participants || []}
+                readers={msg.readers || []}
+                messageId={msg._id}
+                roomId={room?.id || room?._id || room?.roomId}
+                messageRef={messageDomRef}
+                currentUserId={currentUser?._id || currentUser?.id}
+              />
+            )}
           </HStack>
         </div>
 
         {/* Message Actions */}
-        <MessageActions
+        {msg.deliveryStatus !== 'pending' && msg.deliveryStatus !== 'rejected' && <MessageActions
           messageId={msg._id}
           messageContent={msg.content}
           reactions={msg.reactions}
@@ -382,7 +386,7 @@ const FileMessage = ({
           onReactionRemove={onReactionRemove}
           isMine={isMine}
           room={room}
-        />
+        />}
       </VStack>
     </div>
   );

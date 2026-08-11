@@ -23,6 +23,8 @@ const waitForSocketEvent = ({
   timeoutMs,
   timeoutMessage,
   send,
+  matchesSuccess = () => true,
+  matchesError = () => true,
 }) => {
   ensureConnectedSocket(socket);
 
@@ -44,12 +46,18 @@ const waitForSocketEvent = ({
       callback(value);
     };
 
-    const handleSuccess = (data) => settle(resolve, data);
-    const handleError = (error) => settle(reject, error);
+    const handleSuccess = (data) => {
+      if (matchesSuccess(data)) settle(resolve, data);
+    };
+    const handleError = (error) => {
+      if (matchesError(error)) settle(reject, error);
+    };
 
-    socket.once(successEvent, handleSuccess);
+    // Correlated waits may need to ignore events that belong to another request,
+    // so listeners must stay registered until a matching event settles the wait.
+    socket.on(successEvent, handleSuccess);
     for (const event of errorEvents) {
-      socket.once(event, handleError);
+      socket.on(event, handleError);
     }
 
     timeoutId = setTimeout(() => {
@@ -146,9 +154,16 @@ export const createSocketClient = (service = socketService) => {
     waitForSocketEvent({
       socket,
       successEvent: 'message',
-      errorEvents: ['error'],
+      errorEvents: ['error', 'disconnect'],
       timeoutMs,
       timeoutMessage: '메시지 전송이 지연되고 있습니다. 다시 시도해주세요.',
+      matchesSuccess: message => message?.clientMessageId === payload.clientMessageId,
+      matchesError: error => (
+        typeof error === 'string'
+        ||
+        error?.clientMessageId === payload.clientMessageId
+        || error?.code === 'SESSION_EXPIRED'
+      ),
       send: () => sendDomainEvent(service, socket, 'chatMessage', payload),
     }),
   fetchPreviousMessages: (payload, socket) => sendDomainEvent(service, socket, 'fetchPreviousMessages', payload),
@@ -166,7 +181,7 @@ export const createSocketClient = (service = socketService) => {
     waitForSocketEvent({
       socket,
       successEvent: 'joinRoomSuccess',
-      errorEvents: ['joinRoomError', 'error'],
+      errorEvents: ['joinRoomError', 'error', 'disconnect'],
       timeoutMs,
       timeoutMessage: '채팅방 입장 시간이 초과되었습니다.',
       send: () => sendDomainEvent(service, socket, 'joinRoom', { roomId }),

@@ -46,7 +46,6 @@ export const useChatRoomLifecycle = ({
     connectionLost,
     connectionFailed,
     connectionReconnecting,
-    connectionRecovered,
   } = actions;
 
   const {
@@ -141,8 +140,8 @@ export const useChatRoomLifecycle = ({
     // 소켓을 버리고 새로 만들게 되니, 화면 상태만 되돌리고 재입장은 'connect' 에 맡긴다.
     const handleReconnectSuccess = () => {
       if (!mountedRef.current) return;
-      connectionRecovered();
-      setConnected(true);
+      connectionReconnecting();
+      setConnected(false);
     };
 
     const unsubscribeConnectionEvents = socketClient.subscribeConnectionEvents(activeSocket, {
@@ -153,7 +152,10 @@ export const useChatRoomLifecycle = ({
       onReconnectFailed: handleReconnectFailed,
     });
 
-    if (activeSocket.connected && connectionStatus !== 'connected') {
+    if (
+      activeSocket.connected
+      && !['connected', 'joining', 'ready'].includes(connectionStatus)
+    ) {
       connectionEstablished();
     } else if (!activeSocket.connected && connectionStatus !== 'disconnected') {
       connectionLost();
@@ -176,7 +178,6 @@ export const useChatRoomLifecycle = ({
     connectionLost,
     connectionFailed,
     connectionReconnecting,
-    connectionRecovered,
     socketRef,
     mountedRef,
     initializingRef,

@@ -3,6 +3,10 @@ import api, { getAuthHeaders, HEALTH_TIMEOUT_MS } from '../lib/api/client';
 import { loadStoredUser } from '../lib/auth/authStorage';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const HEALTH_CACHE_MS = 5000;
+let healthRequest = null;
+let healthCacheExpiresAt = 0;
+let healthCacheValue = false;
 
 // 유효성 검증 함수
 const validateCredentials = (credentials) => {
@@ -216,19 +220,41 @@ class AuthService {
   }
 
   async checkServerConnection() {
+    if (Date.now() < healthCacheExpiresAt) {
+      return healthCacheValue;
+    }
+
+    if (healthRequest) {
+      return healthRequest;
+    }
+
+    healthRequest = this._checkServerConnection();
+
     try {
-      // 클라이언트에서만 실행되도록 확인
-      if (typeof window === 'undefined') {
-        return false;
-      }
+      const connected = await healthRequest;
+      healthCacheValue = connected;
+      healthCacheExpiresAt = Date.now() + HEALTH_CACHE_MS;
+      return connected;
+    } finally {
+      healthRequest = null;
+    }
+  }
 
-      // API_URL이 없으면 연결 실패로 처리
-      if (!API_URL) {
-        throw new Error('API URL이 설정되지 않았습니다.');
-      }
+  async _checkServerConnection() {
+    // 클라이언트에서만 실행되도록 확인
+    if (typeof window === 'undefined') {
+      return false;
+    }
 
+    // API_URL이 없으면 연결 실패로 처리
+    if (!API_URL) {
+      throw new Error('API URL이 설정되지 않았습니다.');
+    }
+
+    try {
       const response = await api.get('/api/health', {
         timeout: HEALTH_TIMEOUT_MS,
+        skipRetry: true,
         validateStatus: (status) => status < 500 // 5xx 에러만 실제 에러로 처리
       });
 

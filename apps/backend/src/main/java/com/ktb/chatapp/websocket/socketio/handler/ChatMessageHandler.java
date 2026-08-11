@@ -58,10 +58,8 @@ public class ChatMessageHandler {
 
         if (data == null) {
             recordError("null_data");
-            client.sendEvent(ERROR, Map.of(
-                    "code", "MESSAGE_ERROR",
-                    "message", "메시지 데이터가 없습니다."
-            ));
+            sendMessageError(client, data, "MESSAGE_ERROR",
+                    "메시지 데이터가 없습니다.", Map.of());
             timerSample.stop(createTimer("error", "null_data"));
             return;
         }
@@ -70,10 +68,8 @@ public class ChatMessageHandler {
 
         if (socketUser == null) {
             recordError("session_null");
-            client.sendEvent(ERROR, Map.of(
-                    "code", "SESSION_EXPIRED",
-                    "message", "세션이 만료되었습니다. 다시 로그인해주세요."
-            ));
+            sendMessageError(client, data, "SESSION_EXPIRED",
+                    "세션이 만료되었습니다. 다시 로그인해주세요.", Map.of());
             timerSample.stop(createTimer("error", "session_null"));
             return;
         }
@@ -82,10 +78,8 @@ public class ChatMessageHandler {
                 sessionService.validateSession(socketUser.id(), socketUser.authSessionId());
         if (!validation.isValid()) {
             recordError("session_expired");
-            client.sendEvent(ERROR, Map.of(
-                    "code", "SESSION_EXPIRED",
-                    "message", "세션이 만료되었습니다. 다시 로그인해주세요."
-            ));
+            sendMessageError(client, data, "SESSION_EXPIRED",
+                    "세션이 만료되었습니다. 다시 로그인해주세요.", Map.of());
             timerSample.stop(createTimer("error", "session_expired"));
             return;
         }
@@ -99,11 +93,9 @@ public class ChatMessageHandler {
                     .description("Socket.IO rate limit exceeded count")
                     .register(meterRegistry)
                     .increment();
-            client.sendEvent(ERROR, Map.of(
-                    "code", "RATE_LIMIT_EXCEEDED",
-                    "message", "메시지 전송 횟수 제한을 초과했습니다. 잠시 후 다시 시도해주세요.",
-                    "retryAfter", rateLimitResult.retryAfterSeconds()
-            ));
+            sendMessageError(client, data, "RATE_LIMIT_EXCEEDED",
+                    "메시지 전송 횟수 제한을 초과했습니다. 잠시 후 다시 시도해주세요.",
+                    Map.of("retryAfter", rateLimitResult.retryAfterSeconds()));
             log.warn("Rate limit exceeded for user: {}, retryAfter: {}s",
                     socketUser.id(), rateLimitResult.retryAfterSeconds());
             timerSample.stop(createTimer("error", "rate_limit"));
@@ -111,28 +103,23 @@ public class ChatMessageHandler {
         }
         
         try {
-            User sender = userRepository.findById(socketUser.id()).orElse(null);
-            if (sender == null) {
-                recordError("user_not_found");
-                client.sendEvent(ERROR, Map.of(
-                    "code", "MESSAGE_ERROR",
-                    "message", "User not found"
-                ));
-                timerSample.stop(createTimer("error", "user_not_found"));
-                return;
-            }
-
             String roomId = data.getRoom();
-            Room room = roomRepository.findById(roomId).orElse(null);
-            if (room == null || !room.getParticipantIds().contains(socketUser.id())) {
+            boolean hasRoomAccess = roomRepository
+                    .existsByIdAndParticipantIdsContaining(roomId, socketUser.id());
+            if (!hasRoomAccess) {
+                hasRoomAccess = roomRepository.findById(roomId)
+                        .map(Room::getParticipantIds)
+                        .map(participantIds -> participantIds.contains(socketUser.id()))
+                        .orElse(false);
+            }
+            if (!hasRoomAccess) {
                 recordError("room_access_denied");
-                client.sendEvent(ERROR, Map.of(
-                    "code", "MESSAGE_ERROR",
-                    "message", "채팅방 접근 권한이 없습니다."
-                ));
+                sendMessageError(client, data, "MESSAGE_ERROR",
+                        "채팅방 접근 권한이 없습니다.", Map.of());
                 timerSample.stop(createTimer("error", "room_access_denied"));
                 return;
             }
+            UserResponse senderResponse = resolveSender(socketUser);
 
             MessageContent messageContent = data.getParsedContent();
 
@@ -141,10 +128,8 @@ public class ChatMessageHandler {
 
             if (bannedWordChecker.containsBannedWord(messageContent.getTrimmedContent())) {
                 recordError("banned_word");
-                client.sendEvent(ERROR, Map.of(
-                        "code", "MESSAGE_REJECTED",
-                        "message", "금칙어가 포함된 메시지는 전송할 수 없습니다."
-                ));
+                sendMessageError(client, data, "MESSAGE_REJECTED",
+                        "금칙어가 포함된 메시지는 전송할 수 없습니다.", Map.of());
                 timerSample.stop(createTimer("error", "banned_word"));
                 return;
             }
@@ -182,7 +167,7 @@ public class ChatMessageHandler {
                         .findBySenderIdAndClientMessageId(socketUser.id(), data.getClientMessageId())
                         .orElseThrow(() -> duplicateKeyException);
             }
-            MessageResponse messageResponse = createMessageResponse(savedMessage, sender);
+            MessageResponse messageResponse = createMessageResponse(savedMessage, senderResponse);
 
             socketIOServer.getRoomOperations(roomId)
                     .sendEvent(MESSAGE, messageResponse);
@@ -202,12 +187,27 @@ public class ChatMessageHandler {
         } catch (Exception e) {
             recordError("exception");
             log.error("Message handling error", e);
-            client.sendEvent(ERROR, Map.of(
-                "code", "MESSAGE_ERROR",
-                "message", e.getMessage() != null ? e.getMessage() : "메시지 전송 중 오류가 발생했습니다."
-            ));
+            sendMessageError(client, data, "MESSAGE_ERROR",
+                    e.getMessage() != null ? e.getMessage() : "메시지 전송 중 오류가 발생했습니다.",
+                    Map.of());
             timerSample.stop(createTimer("error", "exception"));
         }
+    }
+
+    private void sendMessageError(
+            SocketIOClient client,
+            ChatMessageRequest data,
+            String code,
+            String message,
+            Map<String, Object> extra
+    ) {
+        Map<String, Object> payload = new HashMap<>(extra);
+        payload.put("code", code);
+        payload.put("message", message);
+        if (data != null && data.getClientMessageId() != null && !data.getClientMessageId().isBlank()) {
+            payload.put("clientMessageId", data.getClientMessageId());
+        }
+        client.sendEvent(ERROR, payload);
     }
 
     private Message handleFileMessage(String roomId, String userId, MessageContent messageContent, Map<String, Object> fileData) {
@@ -257,7 +257,7 @@ public class ChatMessageHandler {
         return message;
     }
 
-    private MessageResponse createMessageResponse(Message message, User sender) {
+    private MessageResponse createMessageResponse(Message message, UserResponse sender) {
         var messageResponse = new MessageResponse();
         messageResponse.setId(message.getId());
         messageResponse.setRoomId(message.getRoomId());
@@ -266,7 +266,7 @@ public class ChatMessageHandler {
         messageResponse.setType(message.getType());
         messageResponse.setTimestamp(message.toTimestampMillis());
         messageResponse.setReactions(message.getReactions() != null ? message.getReactions() : Collections.emptyMap());
-        messageResponse.setSender(UserResponse.from(sender));
+        messageResponse.setSender(sender);
         messageResponse.setMetadata(message.getMetadata());
 
         if (message.getFileId() != null) {
@@ -275,6 +275,24 @@ public class ChatMessageHandler {
         }
 
         return messageResponse;
+    }
+
+    private UserResponse resolveSender(SocketUser sender) {
+        if (sender.email() != null) {
+            return createSocketUserResponse(sender);
+        }
+        return userRepository.findById(sender.id())
+                .map(UserResponse::from)
+                .orElseGet(() -> createSocketUserResponse(sender));
+    }
+
+    private UserResponse createSocketUserResponse(SocketUser sender) {
+        return UserResponse.builder()
+                .id(sender.id())
+                .name(sender.name())
+                .email(sender.email())
+                .profileImage(sender.profileImage())
+                .build();
     }
 
     // Metrics helper methods
