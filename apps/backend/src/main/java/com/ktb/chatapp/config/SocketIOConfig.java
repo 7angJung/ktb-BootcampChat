@@ -7,6 +7,8 @@ import com.corundumstudio.socketio.annotation.SpringAnnotationScanner;
 import com.corundumstudio.socketio.namespace.Namespace;
 import com.corundumstudio.socketio.protocol.JacksonJsonSupport;
 import com.corundumstudio.socketio.store.MemoryStoreFactory;
+import com.corundumstudio.socketio.store.RedissonStoreFactory;
+import com.corundumstudio.socketio.store.StoreFactory;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.ktb.chatapp.websocket.socketio.ChatDataStore;
 import com.ktb.chatapp.websocket.socketio.LocalChatDataStore;
@@ -20,6 +22,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Role;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.redisson.Redisson;
+import org.redisson.api.RedissonClient;
+import org.redisson.config.Config;
+import org.springframework.util.StringUtils;
 
 import static org.springframework.beans.factory.config.BeanDefinition.ROLE_INFRASTRUCTURE;
 
@@ -37,8 +44,78 @@ public class SocketIOConfig {
     @Value("${socketio.server.origin:*}")
     private String origin;
 
+    @Value("${spring.data.redis.host:localhost}")
+    private String redisHost;
+
+    @Value("${spring.data.redis.port:6379}")
+    private Integer redisPort;
+
+    @Value("${spring.data.redis.password:}")
+    private String redisPassword;
+
+    @Value("${spring.data.redis.database:0}")
+    private Integer redisDatabase;
+
+    @Bean(name = "socketIoRedissonClient", destroyMethod = "shutdown")
+    @ConditionalOnProperty(name = "socketio.store.type", havingValue = "redisson", matchIfMissing = true)
+    public RedissonClient socketIoRedissonClient() {
+        Config config = createRedissonConfig();
+        log.info("Configuring Socket.IO Redisson store at redis://{}:{}, database={}",
+                redisHost, redisPort, redisDatabase);
+        return Redisson.create(config);
+    }
+
+    Config createRedissonConfig() {
+        Config config = new Config();
+        var server = config.useSingleServer()
+                .setAddress("redis://" + redisHost + ":" + redisPort)
+                .setDatabase(redisDatabase);
+
+        if (StringUtils.hasText(redisPassword)) {
+            config.setPassword(redisPassword);
+        }
+        return config;
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "socketio.store.type", havingValue = "redisson", matchIfMissing = true)
+    public StoreFactory redissonStoreFactory(
+            @Qualifier("socketIoRedissonClient") RedissonClient redissonClient) {
+        return new RedissonStoreFactory(redissonClient);
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "socketio.store.type", havingValue = "memory")
+    public StoreFactory memoryStoreFactory() {
+        log.warn("Socket.IO is using the single-node memory store");
+        return new MemoryStoreFactory();
+    }
+
     @Bean(initMethod = "start", destroyMethod = "stop")
-    public SocketIOServer socketIOServer(AuthTokenListener authTokenListener, MeterRegistry meterRegistry) {
+    public SocketIOServer socketIOServer(
+            AuthTokenListener authTokenListener,
+            MeterRegistry meterRegistry,
+            StoreFactory storeFactory) {
+        com.corundumstudio.socketio.Configuration config = createSocketIOConfiguration(storeFactory);
+
+        log.info("Socket.IO server configured on {}:{} with store={}, {} boss threads and {} worker threads",
+                 host, port, storeFactory.getClass().getSimpleName(),
+                 config.getBossThreads(), config.getWorkerThreads());
+        var socketIOServer = new SocketIOServer(config);
+        socketIOServer.getNamespace(Namespace.DEFAULT_NAME).addAuthTokenListener(authTokenListener);
+        socketIOServer.getNamespace(Namespace.DEFAULT_NAME).addEventInterceptor((client, name, data, ack) -> {
+            // 이벤트 발생 빈도 수집
+            Counter.builder("socketio.events.total")
+                .description("Total Socket.IO events received")
+                .tag("event_type", name)
+                .register(meterRegistry)
+                .increment();
+        });
+
+        return socketIOServer;
+    }
+
+    com.corundumstudio.socketio.Configuration createSocketIOConfiguration(StoreFactory storeFactory) {
         com.corundumstudio.socketio.Configuration config = new com.corundumstudio.socketio.Configuration();
         config.setHostname(host);
         config.setPort(port);
@@ -46,7 +123,7 @@ public class SocketIOConfig {
         var socketConfig = new SocketConfig();
         socketConfig.setReuseAddress(true);
         socketConfig.setTcpNoDelay(false);
-        socketConfig.setAcceptBackLog(10);
+        socketConfig.setAcceptBackLog(500);
         socketConfig.setTcpSendBufferSize(4096);
         socketConfig.setTcpReceiveBufferSize(4096);
         config.setSocketConfig(socketConfig);
@@ -59,22 +136,8 @@ public class SocketIOConfig {
         config.setUpgradeTimeout(10000);
 
         config.setJsonSupport(new JacksonJsonSupport(new JavaTimeModule()));
-        config.setStoreFactory(new MemoryStoreFactory()); // 단일노드 전용
-
-        log.info("Socket.IO server configured on {}:{} with {} boss threads and {} worker threads",
-                 host, port, config.getBossThreads(), config.getWorkerThreads());
-        var socketIOServer = new SocketIOServer(config);
-        socketIOServer.getNamespace(Namespace.DEFAULT_NAME).addAuthTokenListener(authTokenListener);
-        socketIOServer.getNamespace(Namespace.DEFAULT_NAME).addEventInterceptor((client, name, data, ack) -> {
-            // 이벤트 발생 빈도 수집
-            Counter.builder("socketio.events.total")
-                .description("Total Socket.IO events received")
-                .tag("event_type", name)
-                .register(meterRegistry)
-                .increment();
-        });
-        
-        return socketIOServer;
+        config.setStoreFactory(storeFactory);
+        return config;
     }
     
     /**
