@@ -42,8 +42,12 @@ describe('useMessageHandling', () => {
   it('sends trimmed text message through the subscribed room socket', async () => {
     const roomSocket = { connected: true };
     const socketRef = { current: roomSocket };
+    let messages = [];
+    const setMessages = vi.fn(updater => {
+      messages = updater(messages);
+    });
     const { result } = renderHook(() =>
-      useMessageHandling(currentUser, roomId, vi.fn(), [], false, vi.fn(), socketRef)
+      useMessageHandling(currentUser, roomId, vi.fn(), [], false, vi.fn(), socketRef, setMessages)
     );
 
     await act(async () => {
@@ -59,6 +63,37 @@ describe('useMessageHandling', () => {
       }),
       roomSocket,
     );
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      content: 'hello',
+      deliveryStatus: 'pending',
+      clientMessageId: expect.any(String),
+    });
+  });
+
+  it('marks a timed out optimistic message as rejected', async () => {
+    const roomSocket = { connected: true };
+    const socketRef = { current: roomSocket };
+    let messages = [];
+    const setMessages = vi.fn(updater => {
+      messages = updater(messages);
+    });
+    socketClient.sendChatMessageAndWait.mockRejectedValueOnce(
+      new Error('메시지 전송이 지연되고 있습니다.'),
+    );
+    const { result } = renderHook(() =>
+      useMessageHandling(currentUser, roomId, vi.fn(), [], false, vi.fn(), socketRef, setMessages)
+    );
+
+    await act(async () => {
+      await result.current.handleMessageSubmit({ content: 'hello' });
+    });
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      deliveryStatus: 'rejected',
+      deliveryError: '메시지 전송이 지연되고 있습니다.',
+    });
   });
 
   it('shows a connection error without emitting when disconnected', async () => {

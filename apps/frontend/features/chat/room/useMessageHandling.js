@@ -2,6 +2,11 @@ import { useCallback } from 'react';
 import { Toast } from '@/components/Toast';
 import socketClient from '@/lib/socket/socketClient';
 import { useChatFileUpload } from '../files/useChatFileUpload';
+import {
+  createPendingMessage,
+  rejectPendingMessage,
+  settleDeliveredMessage,
+} from '../messages/messageDelivery';
 
 const createClientMessageId = () => {
   if (globalThis.crypto?.randomUUID) {
@@ -19,6 +24,7 @@ export const useMessageHandling = (
   loadingMessages = false,
   setLoadingMessages,
   socketRef,
+  setMessages = () => {},
 ) => {
  const {
    filePreview,
@@ -85,6 +91,8 @@ export const useMessageHandling = (
      return;
    }
 
+   let clientMessageId;
+   let pendingCreated = false;
    try {
       if (messageData.type === 'file') {
         const uploadResponse = await uploadChatFile(
@@ -92,36 +100,70 @@ export const useMessageHandling = (
           currentUser
         );
 
-       await socketClient.sendChatMessageAndWait({
+       clientMessageId = createClientMessageId();
+       const file = uploadResponse.data.file;
+       setMessages(prev => [...prev, createPendingMessage({
+         clientMessageId,
+         roomId,
+         currentUser,
+         type: 'file',
+         content: messageData.content || '',
+         file,
+       })]);
+       pendingCreated = true;
+
+       const deliveredMessage = await socketClient.sendChatMessageAndWait({
          room: roomId,
          type: 'file',
          content: messageData.content || '',
-         clientMessageId: createClientMessageId(),
+         clientMessageId,
          fileData: {
-           _id: uploadResponse.data.file._id,
-           filename: uploadResponse.data.file.filename,
-           originalname: uploadResponse.data.file.originalname,
-           mimetype: uploadResponse.data.file.mimetype,
-           size: uploadResponse.data.file.size
+           _id: file._id,
+           filename: file.filename,
+           originalname: file.originalname,
+           mimetype: file.mimetype,
+           size: file.size
          }
        }, roomSocket);
+       setMessages(prev => settleDeliveredMessage(prev, deliveredMessage));
 
        resetFileUpload();
 
      } else if (messageData.content?.trim()) {
-       await socketClient.sendChatMessageAndWait({
+       clientMessageId = createClientMessageId();
+       const content = messageData.content.trim();
+       setMessages(prev => [...prev, createPendingMessage({
+         clientMessageId,
+         roomId,
+         currentUser,
+         type: 'text',
+         content,
+       })]);
+       pendingCreated = true;
+
+       const deliveredMessage = await socketClient.sendChatMessageAndWait({
          room: roomId,
          type: 'text',
-         content: messageData.content.trim(),
-         clientMessageId: createClientMessageId(),
+         content,
+         clientMessageId,
        }, roomSocket);
+       setMessages(prev => settleDeliveredMessage(prev, deliveredMessage));
      }
 
    } catch (error) {
+     if (pendingCreated) {
+       setMessages(prev => rejectPendingMessage(
+         prev,
+         clientMessageId,
+         error?.message,
+       ));
+     }
      if (error.message?.includes('세션') ||
          error.message?.includes('인증') ||
          error.message?.includes('토큰')) {
-       await handleSessionError();
+       if (typeof handleSessionError === 'function') {
+         await handleSessionError();
+       }
        return;
      }
 
@@ -135,7 +177,7 @@ export const useMessageHandling = (
        setUploading(false);
      }
    }
- }, [currentUser, roomId, handleSessionError, uploadChatFile, resetFileUpload, setUploadError, setUploading, canSendOnRoomSocket, getRoomSocket]);
+ }, [currentUser, roomId, handleSessionError, uploadChatFile, resetFileUpload, setUploadError, setUploading, setMessages, canSendOnRoomSocket, getRoomSocket]);
 
  const removeFilePreview = useCallback(() => {
    resetFileUpload();
