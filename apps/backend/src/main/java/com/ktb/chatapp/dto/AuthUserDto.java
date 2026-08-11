@@ -3,6 +3,7 @@ package com.ktb.chatapp.dto;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import com.ktb.chatapp.model.User;
+import com.ktb.chatapp.security.AuthenticatedUserPrincipal;
 import com.ktb.chatapp.service.FileUrl;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -27,6 +28,16 @@ public class AuthUserDto {
                 user.getName(),
                 user.getEmail(),
                 FileUrl.of(user.getProfileImage())
+        );
+    }
+
+    /** 인증 과정에서 이미 조회한 사용자 정보로 로그인 응답을 생성한다. */
+    public static AuthUserDto from(AuthenticatedUserPrincipal principal) {
+        return new AuthUserDto(
+                principal.getId(),
+                principal.getName(),
+                principal.getEmail(),
+                FileUrl.of(principal.getProfileImage())
         );
     }
 }
