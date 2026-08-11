@@ -9,9 +9,11 @@ import com.corundumstudio.socketio.protocol.JacksonJsonSupport;
 import com.corundumstudio.socketio.store.MemoryStoreFactory;
 import com.corundumstudio.socketio.store.RedissonStoreFactory;
 import com.corundumstudio.socketio.store.StoreFactory;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.ktb.chatapp.websocket.socketio.ChatDataStore;
 import com.ktb.chatapp.websocket.socketio.LocalChatDataStore;
+import com.ktb.chatapp.websocket.socketio.RedissonChatDataStore;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
@@ -152,10 +154,18 @@ public class SocketIOConfig {
         return new SpringAnnotationScanner(socketIOServer);
     }
     
-    // 인메모리 저장소, 단일 노드 환경에서만 사용
     @Bean
-    @ConditionalOnProperty(name = "socketio.enabled", havingValue = "true", matchIfMissing = true)
-    public ChatDataStore chatDataStore() {
+    @ConditionalOnProperty(name = "socketio.store.type", havingValue = "redisson", matchIfMissing = true)
+    public ChatDataStore redissonChatDataStore(
+            @Qualifier("socketIoRedissonClient") RedissonClient redissonClient,
+            ObjectMapper objectMapper) {
+        return new RedissonChatDataStore(redissonClient, objectMapper);
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "socketio.store.type", havingValue = "memory")
+    public ChatDataStore localChatDataStore() {
+        log.warn("Application Socket.IO state is using the single-node memory store");
         return new LocalChatDataStore();
     }
 }
